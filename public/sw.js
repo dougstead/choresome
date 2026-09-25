@@ -51,7 +51,7 @@ self.addEventListener("fetch", (event) => {
   // back to a cached copy, then to the offline page, if the network is down.
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: "no-store" })
         .then((response) => {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));

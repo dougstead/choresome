@@ -9,6 +9,8 @@
 
 FROM node:22-bookworm-slim AS base
 WORKDIR /app
+# Prisma's query engine needs libssl to run; Debian's "slim" image strips it out.
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
 FROM base AS deps
 COPY package.json package-lock.json ./

@@ -21,12 +21,14 @@ export function useAreas(includeArchived = false) {
   return { areas: data?.areas ?? [], error, isLoading };
 }
 
-export function useTasks(options: { areaId?: string; includeArchived?: boolean } = {}) {
+export function useTasks(options: { areaId?: string; includeArchived?: boolean; refreshInterval?: number } = {}) {
   const params = new URLSearchParams();
   if (options.areaId) params.set("areaId", options.areaId);
   if (options.includeArchived) params.set("includeArchived", "true");
   const query = params.toString();
-  const { data, error, isLoading } = useSWR<{ tasks: TaskDto[] }>(`/api/tasks${query ? `?${query}` : ""}`, fetcher);
+  const { data, error, isLoading } = useSWR<{ tasks: TaskDto[] }>(`/api/tasks${query ? `?${query}` : ""}`, fetcher, {
+    refreshInterval: options.refreshInterval,
+  });
   return { tasks: data?.tasks ?? [], error, isLoading };
 }
 

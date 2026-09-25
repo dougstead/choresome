@@ -6,6 +6,11 @@ import { reminderConfigSchema } from "@/lib/validation/recurrence";
 
 export type TaskWithRelations = Task & { area: Area; defaultAssignee: Member | null };
 
+// Dates are converted to ISO strings here (rather than left as Date objects)
+// so this shape is identical whether it's JSON-serialized for an API route
+// or passed directly as a prop from a Server to a Client Component — React's
+// RSC wire format would otherwise preserve real Date instances in the latter
+// case, silently diverging from the TaskDto contract client code relies on.
 export function serializeTask(task: TaskWithRelations) {
   const recurrenceRule = parseRecurrenceRule(task.recurrenceConfig);
   return {
@@ -15,7 +20,7 @@ export function serializeTask(task: TaskWithRelations) {
     areaId: task.areaId,
     area: { id: task.area.id, name: task.area.name, icon: task.area.icon },
     active: task.active,
-    archivedAt: task.archivedAt,
+    archivedAt: task.archivedAt ? task.archivedAt.toISOString() : null,
     recurrenceRule,
     recurrenceSummary: describeRecurrence(recurrenceRule),
     dueDate: calendarDateToIsoDate(utcDateToCalendarDate(task.dueDate)),
@@ -28,7 +33,7 @@ export function serializeTask(task: TaskWithRelations) {
     priority: task.priority,
     icon: task.icon,
     shortId: task.shortId,
-    createdAt: task.createdAt,
-    updatedAt: task.updatedAt,
+    createdAt: task.createdAt.toISOString(),
+    updatedAt: task.updatedAt.toISOString(),
   };
 }

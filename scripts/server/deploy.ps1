@@ -110,6 +110,16 @@ try {
         New-Item -ItemType Directory -Path "$AppDirectory\data" | Out-Null
     }
 
+    # Belt-and-suspenders: package.json's own "postinstall" already does this,
+    # but `npm ci`'s handling of *dependency* postinstall scripts (as opposed
+    # to the root package's own) has proven flaky enough in practice --
+    # silently leaving a stale/stub @prisma/client with none of this schema's
+    # models typed -- that it's worth this explicit, ~100ms-cost step rather
+    # than trusting that alone.
+    Write-Host "Generating Prisma client..."
+    npx.cmd prisma generate
+    Assert-LastCommandSucceeded "prisma generate"
+
     Write-Host "Applying database migrations..."
     npx.cmd prisma migrate deploy
     Assert-LastCommandSucceeded "prisma migrate deploy"

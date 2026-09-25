@@ -1,0 +1,157 @@
+// Choresome data model.
+//
+// Design notes:
+// - Single-household singleton (see Household, id fixed to 1). Not multi-tenant;
+//   easy to extend later without reshaping existing tables.
+// - Tasks are never hard-deleted by the UI; they are archived. CompletionEvent
+//   rows are the permanent, append-mostly history the app is built around.
+// - recurrenceConfig / reminderConfig are validated by Zod at the application
+//   boundary (see src/lib/validation) rather than constrained in the schema.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum RecurrenceType {
+  COMPLETION_RELATIVE
+  FIXED_CALENDAR
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum Theme {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
+/// Singleton row (id always 1) holding household identity + app settings.
+model Household {
+  id       Int    @id @default(autoincrement())
+  name     String
+  timezone String @default("Europe/London")
+
+  theme              Theme   @default(SYSTEM)
+  dateFormat         String  @default("DD/MM/YYYY")
+  timeFormat         String  @default("24h")
+  upcomingWindowDays Int     @default(3)
+  reminderDefaults   String  @default("{\"onDue\":true,\"onOverdue\":true,\"daysBefore\":[],\"hoursBefore\":[]}")
+
+  backupDir           String?
+  backupRetention     Int     @default(14)
+  backupIntervalHours Int     @default(24)
+
+  displayConfig String @default("{\"idleTimeoutSeconds\":90,\"sharedMode\":true,\"screensaverBrightness\":0.4}")
+
+  setupCompleted Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Member {
+  id     String  @id @default(cuid())
+  name   String
+  icon   String  @default("🙂")
+  color  String? // optional hex accent, e.g. "#4F8EF7"
+  active Boolean @default(true)
+  order  Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  defaultAssigneeFor Task[]            @relation("TaskDefaultAssignee")
+  completionEvents   CompletionEvent[]
+
+  @@index([active, order])
+}
+
+model Area {
+  id       String  @id @default(cuid())
+  name     String
+  icon     String  @default("🏠")
+  order    Int     @default(0)
+  archived Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks Task[]
+
+  @@index([archived, order])
+}
+
+model Task {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  areaId String
+  area   Area   @relation(fields: [areaId], references: [id], onDelete: Restrict)
+
+  active     Boolean   @default(true)
+  archivedAt DateTime?
+
+  recurrenceType   RecurrenceType
+  /// JSON — shape depends on recurrenceType, see src/lib/recurrence/types.ts
+  recurrenceConfig String
+
+  /// Current due date, stored as a UTC-midnight instant representing a
+  /// household-local calendar date (see src/lib/dates.ts).
+  dueDate DateTime
+
+  /// JSON ReminderConfig, or null to fall back to household defaults.
+  reminderConfig String?
+
+  defaultAssigneeId String?
+  defaultAssignee   Member? @relation("TaskDefaultAssignee", fields: [defaultAssigneeId], references: [id], onDelete: SetNull)
+
+  estimatedDurationMinutes Int?
+  priority                 Priority @default(MEDIUM)
+  icon                     String   @default("🧽")
+
+  /// Short, URL-safe identifier used by /t/[shortId] for QR/NFC.
+  shortId String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  completionEvents CompletionEvent[]
+
+  @@index([areaId])
+  @@index([active, dueDate])
+}
+
+/// Immutable-by-default log of task completions. The app's history and
+/// statistics are derived entirely from these rows. Corrections are made via
+/// explicit edit/delete actions in the UI, not by mutating other tables.
+model CompletionEvent {
+  id     String @id @default(cuid())
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  completedAt DateTime
+  note        String?
+
+  /// The due date this completion satisfied, if the task had one at the time.
+  dueDateAtCompletion DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId, completedAt])
+  @@index([memberId, completedAt])
+  @@index([completedAt])
+}

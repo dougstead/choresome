@@ -6,7 +6,7 @@ import { ArrowLeftIcon, CheckIcon, EditIcon } from "./icons";
 import { StatusBadge } from "./status-badge";
 import { MemberPickerSheet } from "./member-picker-sheet";
 import { TaskStatsPanel } from "./task-stats-panel";
-import { TaskQrCode } from "./task-qr-code";
+import { TaskNfcTagsSummary } from "./task-nfc-tags-summary";
 import { CompletionHistoryList } from "./completion-history-list";
 import { useCompleteTask } from "@/hooks/use-complete-task";
 import { useMembers } from "@/hooks/use-household-data";
@@ -120,7 +120,7 @@ export function TaskDetail({
         </button>
       ) : null}
 
-      <TaskQrCode shortId={task.shortId} taskName={task.name} />
+      <TaskNfcTagsSummary taskId={task.id} />
 
       <section>
         <h2 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-text-muted">Statistics</h2>

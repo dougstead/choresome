@@ -35,9 +35,19 @@ export interface TaskDto {
   estimatedDurationMinutes: number | null;
   priority: "LOW" | "MEDIUM" | "HIGH";
   icon: string;
-  shortId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface NfcTagDto {
+  id: string;
+  token: string;
+  label: string;
+  taskId: string | null;
+  task: { id: string; name: string; icon: string } | null;
+  active: boolean;
+  lastUsedAt: string | null;
+  createdAt: string;
 }
 
 export interface CompletionEventDto {

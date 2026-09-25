@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
-export function jsonError(status: number, message: string, details?: unknown) {
-  return NextResponse.json({ error: message, ...(details ? { details } : {}) }, { status });
+export function jsonError(status: number, message: string, details?: unknown, code?: string) {
+  return NextResponse.json({ error: message, ...(code ? { code } : {}), ...(details ? { details } : {}) }, { status });
 }
 
 /** Converts a caught error from a route handler into an appropriate JSON response. */

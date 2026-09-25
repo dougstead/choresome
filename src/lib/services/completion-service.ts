@@ -6,7 +6,12 @@ import type { RecordCompletionInput, UpdateCompletionInput } from "@/lib/validat
 import { getHouseholdSettings } from "./settings-service";
 import { dueDateForNewOrEditedRule } from "./scheduling";
 
+// Default dedup window for manual completion (dashboard/task-detail double-tap protection).
 const DUPLICATE_TAP_WINDOW_MS = 5_000;
+
+// Longer window for NFC/QR scans: a repeated physical tap, an Android NFC re-trigger,
+// or a browser reload of the same completion page should collapse into one event.
+export const NFC_DEDUPE_WINDOW_MS = 60_000;
 
 /** Recomputes a completion-relative task's due date from whichever completion is now chronologically latest. Safe to call unconditionally after any create/edit/delete. */
 async function recalculateCompletionRelativeDueDate(taskId: string) {
@@ -24,7 +29,11 @@ async function recalculateCompletionRelativeDueDate(taskId: string) {
   return prisma.task.update({ where: { id: taskId }, data: { dueDate: calendarDateToUtcDate(nextDue) } });
 }
 
-export async function recordCompletion(input: RecordCompletionInput) {
+export async function recordCompletion(
+  input: RecordCompletionInput,
+  options: { dedupeWindowMs?: number } = {}
+) {
+  const dedupeWindowMs = options.dedupeWindowMs ?? DUPLICATE_TAP_WINDOW_MS;
   const task = await prisma.task.findUniqueOrThrow({ where: { id: input.taskId } });
   const completedAt = input.completedAt ?? new Date();
 
@@ -32,9 +41,10 @@ export async function recordCompletion(input: RecordCompletionInput) {
     where: {
       taskId: input.taskId,
       memberId: input.memberId,
-      completedAt: { gte: new Date(completedAt.getTime() - DUPLICATE_TAP_WINDOW_MS) },
+      completedAt: { gte: new Date(completedAt.getTime() - dedupeWindowMs) },
     },
     orderBy: { completedAt: "desc" },
+    include: { member: true },
   });
   if (recentDuplicate) {
     return { event: recentDuplicate, task, duplicate: true as const };

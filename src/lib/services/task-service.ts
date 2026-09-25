@@ -1,4 +1,3 @@
-import { customAlphabet } from "nanoid";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
@@ -11,18 +10,6 @@ import { parseRecurrenceRule, serializeRecurrenceRule } from "@/lib/recurrence/s
 import { getHouseholdSettings } from "./settings-service";
 import { dueDateForNewOrEditedRule } from "./scheduling";
 import type { CreateTaskInput, UpdateTaskInput } from "@/lib/validation/task";
-
-// Unambiguous, URL-safe alphabet (no 0/O/1/I/l) — these get printed on QR codes and typed by hand for NFC.
-const nanoid = customAlphabet("23456789ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz", 8);
-
-async function generateUniqueShortId(): Promise<string> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const candidate = nanoid();
-    const existing = await prisma.task.findUnique({ where: { shortId: candidate } });
-    if (!existing) return candidate;
-  }
-  throw new Error("Could not generate a unique task short ID");
-}
 
 export async function listTasks(options: { includeArchived?: boolean; areaId?: string } = {}) {
   return prisma.task.findMany({
@@ -42,13 +29,6 @@ export async function getTaskById(id: string) {
   });
 }
 
-export async function getTaskByShortId(shortId: string) {
-  return prisma.task.findUnique({
-    where: { shortId },
-    include: { area: true, defaultAssignee: true },
-  });
-}
-
 export async function createTask(input: CreateTaskInput) {
   const settings = await getHouseholdSettings();
   const today = instantToCalendarDate(new Date(), settings.timezone);
@@ -59,7 +39,6 @@ export async function createTask(input: CreateTaskInput) {
     latestCompletionDate: null,
   });
   const { recurrenceType, recurrenceConfig } = serializeRecurrenceRule(input.recurrenceRule);
-  const shortId = await generateUniqueShortId();
 
   return prisma.task.create({
     data: {
@@ -74,7 +53,6 @@ export async function createTask(input: CreateTaskInput) {
       estimatedDurationMinutes: input.estimatedDurationMinutes ?? null,
       priority: input.priority ?? "MEDIUM",
       icon: input.icon ?? "🧽",
-      shortId,
     },
     include: { area: true, defaultAssignee: true },
   });

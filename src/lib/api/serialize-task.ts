@@ -32,7 +32,6 @@ export function serializeTask(task: TaskWithRelations) {
     estimatedDurationMinutes: task.estimatedDurationMinutes,
     priority: task.priority,
     icon: task.icon,
-    shortId: task.shortId,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
   };

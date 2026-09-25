@@ -54,7 +54,17 @@ const taskExportSchema = z.object({
   estimatedDurationMinutes: z.number().nullable(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH"]),
   icon: z.string(),
-  shortId: z.string(),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date(),
+});
+
+const nfcTagExportSchema = z.object({
+  id: z.string(),
+  token: z.string(),
+  label: z.string(),
+  taskId: z.string().nullable(),
+  active: z.boolean(),
+  lastUsedAt: z.coerce.date().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
@@ -77,6 +87,8 @@ export const householdExportBundleSchema = z.object({
   members: z.array(memberExportSchema),
   areas: z.array(areaExportSchema),
   tasks: z.array(taskExportSchema),
+  // Optional + defaulted so exports taken before NFC tags existed still import cleanly.
+  nfcTags: z.array(nfcTagExportSchema).default([]),
   completionEvents: z.array(completionEventExportSchema),
 });
 

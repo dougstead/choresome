@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { resetDb } from "@/lib/test/reset-db";
 import { utcDateToCalendarDate } from "@/lib/dates";
-import { archiveTask, createTask, getTaskByShortId, listTasks, unarchiveTask, updateTask } from "./task-service";
+import { archiveTask, createTask, listTasks, unarchiveTask, updateTask } from "./task-service";
 import { recordCompletion } from "./completion-service";
 import { getHouseholdSettings } from "./settings-service";
 import type { CompletionRelativeRule, FixedCalendarRule } from "@/lib/recurrence";
@@ -39,15 +39,6 @@ describe("createTask", () => {
       startDate: { year: 2026, month: 12, day: 1 },
     });
     expect(utcDateToCalendarDate(task.dueDate)).toEqual({ year: 2026, month: 12, day: 1 });
-  });
-
-  it("assigns a unique, URL-safe short ID usable via /t/[shortId]", async () => {
-    const { area } = await seed();
-    const rule: CompletionRelativeRule = { type: "COMPLETION_RELATIVE", intervalValue: 7, intervalUnit: "days" };
-    const task = await createTask({ name: "Bins", areaId: area.id, recurrenceRule: rule });
-    expect(task.shortId).toMatch(/^[A-Za-z2-9]{8}$/);
-    const found = await getTaskByShortId(task.shortId);
-    expect(found?.id).toBe(task.id);
   });
 
   it("jumps fixed-calendar tasks to their next real occurrence", async () => {

@@ -59,6 +59,46 @@ describe("recordCompletion — completion-relative", () => {
     const events = await prisma.completionEvent.findMany({ where: { taskId: task.id } });
     expect(events).toHaveLength(1);
   });
+
+  it("supports a custom dedupe window (e.g. for NFC scans) independent of the default", async () => {
+    const { area, doug } = await seed();
+    const rule: CompletionRelativeRule = { type: "COMPLETION_RELATIVE", intervalValue: 7, intervalUnit: "days" };
+    const task = await createTask({ name: "Bins", areaId: area.id, recurrenceRule: rule });
+
+    const t0 = new Date("2026-09-01T12:00:00Z");
+    const within60s = new Date(t0.getTime() + 30_000);
+    const after60s = new Date(t0.getTime() + 70_000);
+
+    const first = await recordCompletion({ taskId: task.id, memberId: doug.id, completedAt: t0 }, { dedupeWindowMs: 60_000 });
+    const second = await recordCompletion(
+      { taskId: task.id, memberId: doug.id, completedAt: within60s },
+      { dedupeWindowMs: 60_000 }
+    );
+    const third = await recordCompletion(
+      { taskId: task.id, memberId: doug.id, completedAt: after60s },
+      { dedupeWindowMs: 60_000 }
+    );
+
+    expect(second.duplicate).toBe(true);
+    expect(second.event.id).toBe(first.event.id);
+    expect(third.duplicate).toBe(false);
+    expect(third.event.id).not.toBe(first.event.id);
+
+    const events = await prisma.completionEvent.findMany({ where: { taskId: task.id } });
+    expect(events).toHaveLength(2);
+  });
+
+  it("includes member details even on a deduped (duplicate) response", async () => {
+    const { area, doug } = await seed();
+    const rule: CompletionRelativeRule = { type: "COMPLETION_RELATIVE", intervalValue: 7, intervalUnit: "days" };
+    const task = await createTask({ name: "Bins", areaId: area.id, recurrenceRule: rule });
+
+    await recordCompletion({ taskId: task.id, memberId: doug.id });
+    const duplicate = await recordCompletion({ taskId: task.id, memberId: doug.id });
+
+    expect(duplicate.duplicate).toBe(true);
+    expect(duplicate.event.member?.name).toBe("Doug");
+  });
 });
 
 describe("recordCompletion — fixed-calendar", () => {

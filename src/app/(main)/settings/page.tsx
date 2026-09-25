@@ -4,6 +4,7 @@ import { DevicePreferenceCard } from "@/components/settings/device-preference-ca
 import { DisplaySettingsForm } from "@/components/settings/display-settings-form";
 import { HouseholdForm } from "@/components/settings/household-form";
 import { MembersManager } from "@/components/settings/members-manager";
+import { NfcTagsManager } from "@/components/settings/nfc-tags-manager";
 import { NotificationsCard } from "@/components/settings/notifications-card";
 
 export default function SettingsPage() {
@@ -14,6 +15,7 @@ export default function SettingsPage() {
       <HouseholdForm />
       <MembersManager />
       <AreasManager />
+      <NfcTagsManager />
       <NotificationsCard />
       <DisplaySettingsForm />
       <BackupCard />

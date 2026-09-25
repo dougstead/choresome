@@ -119,16 +119,37 @@ model Task {
   priority                 Priority @default(MEDIUM)
   icon                     String   @default("🧽")
 
-  /// Short, URL-safe identifier used by /t/[shortId] for QR/NFC.
-  shortId String @unique
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   completionEvents CompletionEvent[]
+  nfcTags          NfcTag[]
 
   @@index([areaId])
   @@index([active, dueDate])
+}
+
+/// A physical NFC sticker (or its QR-code equivalent), identified by a
+/// permanent random `token` baked into the tag's URL. `taskId` is the
+/// *current* assignment and can be repointed to a different task at any
+/// time without touching the physical tag — the token itself never changes.
+model NfcTag {
+  id    String @id @default(cuid())
+  token String @unique
+
+  /// Friendly name/location, e.g. "Washing machine cupboard".
+  label String @default("")
+
+  taskId String?
+  task   Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  active     Boolean   @default(true)
+  lastUsedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId])
 }
 
 /// Immutable-by-default log of task completions. The app's history and

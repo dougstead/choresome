@@ -12,6 +12,7 @@ import { PrismaClient } from "@prisma/client";
 import { addDays, calendarDateToUtcDate, utcDateToCalendarDate, type CalendarDate } from "../src/lib/dates";
 import { createTask } from "../src/lib/services/task-service";
 import { recordCompletion } from "../src/lib/services/completion-service";
+import { createNfcTag } from "../src/lib/services/nfc-tag-service";
 import { updateHouseholdSettings } from "../src/lib/services/settings-service";
 import type { RecurrenceRule } from "../src/lib/recurrence";
 
@@ -219,6 +220,8 @@ async function main() {
     },
   ];
 
+  const tasksByName: Record<string, { id: string }> = {};
+
   for (const def of taskDefs) {
     const startDate = daysAgo(def.historyStartDaysAgo);
     let task = await createTask({
@@ -231,6 +234,7 @@ async function main() {
       estimatedDurationMinutes: def.estimatedDurationMinutes,
       defaultAssigneeId: null,
     });
+    tasksByName[def.name] = task;
 
     if (def.historyStartDaysAgo === 0) continue; // "Deep clean fridge" is deliberately left with no history
 
@@ -256,7 +260,11 @@ async function main() {
     }
   }
 
-  console.log(`Seeded ${taskDefs.length} tasks with realistic history for Doug and Sarah.`);
+  await createNfcTag({ label: "Bin cupboard", taskId: tasksByName["Put bins out"]?.id ?? null });
+  await createNfcTag({ label: "Kitchen sink", taskId: tasksByName["Wipe kitchen surfaces"]?.id ?? null });
+  await createNfcTag({ label: "Spare tag (unassigned)", taskId: null });
+
+  console.log(`Seeded ${taskDefs.length} tasks with realistic history for Doug and Sarah, plus 3 demo NFC tags.`);
 }
 
 main()

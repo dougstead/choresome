@@ -126,7 +126,7 @@ this happen on".
 
 ```
 prisma/
-  schema.prisma        Data model (Household, Member, Area, Task, CompletionEvent)
+  schema.prisma        Data model (Household, Member, Area, Task, NfcTag, CompletionEvent)
   migrations/           Prisma migration history
   seed.ts               Dev-only demo data (guarded by SEED_DEMO_DATA=true)
 src/
@@ -137,25 +137,26 @@ src/
       tasks/               New/edit task forms, task detail
       history/             Global activity log
       stats/               Household statistics
-      settings/            Household/member/area/backup settings
+      settings/            Household/member/area/NFC tags/backup settings
     api/                 REST route handlers, one folder per resource
     display/             /display — the Pixel wall-display route
-    t/[shortId]/         /t/{id} — NFC/QR quick-complete landing page
+    nfc/complete/[token]/  /nfc/complete/{token} — tap-to-complete landing page
     setup/               First-run setup wizard
     layout.tsx           Root layout: fonts, theme, PWA registration
   components/            React components (mostly client components)
     display/               Wall-display-specific UI
-    settings/               Settings page sections
+    settings/               Settings page sections (incl. NFC tag manager)
   hooks/                  Client-side hooks (SWR wrappers, complete-task flow)
   lib/
     recurrence/             The recurrence engine — pure, framework-free, heavily tested
-    services/               Business logic: tasks, completions, stats, backup, settings
+    services/               Business logic: tasks, completions, NFC tags, stats, backup, settings
     notifications/           Reminder decision logic + delivery-channel abstraction
     validation/              Zod schemas
     api/                     Shared API helpers (error handling, DTO shaping)
     client/                  Browser-only helpers (fetch wrapper, device preference)
     dates.ts                Calendar-date arithmetic
     task-status.ts           "Is this overdue / due today / upcoming?" logic
+    short-token.ts           Shared random-token generator (NFC tag tokens)
   instrumentation.ts       Starts the automatic backup schedule on server boot
 scripts/
   run-backup.ts           Standalone backup trigger (for Task Scheduler, if preferred)
@@ -247,6 +248,18 @@ docker compose up -d --build
 
 Migrations run automatically on startup; your data in `./data` is untouched.
 
+**Using a different port** (e.g. if something else on the mini PC already
+uses 3000): edit the `ports` line in `docker-compose.yml` — only the left
+side changes, since that's the host port:
+
+```yaml
+ports:
+  - "8080:3000"   # visit http://<mini-pc-address>:8080 instead
+```
+
+Then `docker compose up -d --build` again. The container's internal port
+(3000) doesn't need to change.
+
 ### Option B: Plain Node.js (no Docker)
 
 ```bash
@@ -256,6 +269,8 @@ npx prisma migrate deploy
 npm run build
 npm start                 # serves on port 3000
 ```
+
+For a different port with this path: `npm start -- -p 8080`, or set `PORT=8080` in the environment before `npm start`.
 
 ## Windows mini-PC deployment (step by step)
 
@@ -305,6 +320,33 @@ Look for the `IPv4 Address` under your active adapter (e.g. `192.168.1.42`).
 Other devices on the same Wi-Fi/network reach the app at
 `http://192.168.1.42:3000`. A static DHCP reservation for the mini PC (set
 in your router) is worth doing so this address doesn't change later.
+
+### 5b. Give it a friendly hostname (optional)
+
+Typing an IP address every time is easy to forget. If your router supports
+custom local DNS entries (often called "Local DNS", "DNS Rewrites", "Static
+DNS", or similar — common on router firmware like AdGuard Home, Pi-hole,
+OPNsense/pfSense, and some ASUS/Netgear/Ubiquiti models):
+
+1. In the router's admin page, find that DNS section and add an entry
+   mapping a hostname straight to the mini PC's LAN IP, e.g.:
+
+   | Hostname | Points to |
+   |---|---|
+   | `choresome.home` | `192.168.50.9` |
+
+   Use a name with a dot in it (`choresome.home`, `choresome.lan`) rather
+   than a single bare word — most phone browsers treat an address with no
+   dot as a search-engine query instead of a hostname to look up.
+2. Everyone on the network can then use `http://choresome.home:3000`
+   instead of the raw IP (still with the port — this doesn't set up HTTPS
+   or hide the port number, it's just a name for the same address). It can
+   take a minute for devices to pick up the change, or a Wi-Fi
+   reconnect/reboot on stubborn ones.
+3. If the router doesn't support custom DNS entries at all, the plain IP
+   address (with the static DHCP reservation from step 5) is the simplest
+   reliable fallback — bookmark it on each device / use it as the PWA
+   install URL instead.
 
 ### 6. Start automatically after a reboot
 
@@ -409,18 +451,72 @@ API everything else uses.
 
 ## NFC tag / QR code setup
 
-Every task has a short, unique URL: `/t/{shortId}` (e.g.
-`http://192.168.1.42:3000/t/G3NuSsEK`). Opening it shows that one task and a
-single big "Mark Complete" button — no navigation needed.
+Tapping a registered tag **completes its task immediately** — there's no
+intermediate task page, no "Complete" button to press, and (after the first
+scan on a given device) no "who did this?" prompt. The intended workflow is
+literally: do the chore, tap the tag, done.
 
-- **QR code**: open any task's detail page — its QR code and URL are shown
-  near the bottom, with a "Download QR code" button to save/print it.
-- **NFC tags**: write the same URL to a cheap NTAG213/215 sticker using any
-  NFC-writing app on Android (e.g. NFC Tools) — Choresome doesn't need any
-  special NFC code on the server or in the app; Android's own "open this
-  URL" behaviour when tapping a tag does all the work. Stick the tag near
-  the relevant appliance (e.g. on the washing machine, or inside a cupboard
-  door), and tapping a phone against it opens straight to that task.
+### How it works
+
+Each **NFC tag** is its own record (Settings → NFC / QR Tags), separate from
+the task it happens to point at right now:
+
+```
+token (permanent, on the sticker)  →  NfcTag row  →  task (reassignable)
+```
+
+The physical sticker only ever encodes `/nfc/complete/{token}` — a permanent
+random ID with no meaning of its own. Which task that resolves to is looked
+up in the database and can be changed any time in Settings, without touching
+the sticker. Retiring an appliance or reorganising a room just means
+reassigning its tag to a different task.
+
+Opening that URL:
+
+1. Loads a small page (a plain `GET` — nothing is completed yet).
+2. If this device already has a remembered household member (see below), it
+   immediately fires a `POST` to complete the task and shows a confirmation:
+
+   ```
+   ✓ Dishwasher filter cleaned
+   Completed by Doug
+   Just now
+   Next due: 25 October
+   ```
+
+   with an **Undo** button for a few seconds, for accidental taps.
+3. If this device doesn't have a remembered member yet, it asks once
+   ("Who's completing this?"), remembers the answer for next time (same
+   `localStorage` preference personal devices already use for the regular
+   dashboard), and then completes the task. Every scan after that is fully
+   automatic — Doug's phone always attributes to Doug, Sarah's phone always
+   attributes to Sarah.
+
+**Duplicate protection**: repeated scans of the *same tag* within about 60
+seconds are treated as the same action (no second completion event) — this
+covers a browser reload, Android re-triggering the intent, or holding the
+phone against the tag a moment too long. This is a separate, longer window
+than the few-second double-tap protection on the regular dashboard's
+"Complete" button, which is unaffected by any of this.
+
+### Setting up a tag
+
+1. Go to **Settings → NFC / QR Tags → Register a new tag**, give it a
+   friendly name/location (e.g. "Washing machine cupboard"), and assign it
+   to a task.
+2. Click **QR** on that tag to reveal its QR code and URL, with **Copy** and
+   **Download QR** actions.
+3. **For an NFC sticker**: write the copied URL to a cheap NTAG213/215 tag
+   using any NFC-writing app on Android (e.g. NFC Tools) — Choresome doesn't
+   need any special NFC code on the server or in the app; Android's own
+   "open this URL" behaviour when tapping a tag does the rest. Stick it near
+   the relevant appliance.
+4. **For a QR code**: print or download it and stick it up instead — scanning
+   it with a phone camera behaves identically to an NFC tap.
+
+Reassigning, disabling, renaming, or checking when a tag was last used all
+happen from that same Settings list — nothing needs rewriting on the
+physical tag unless you're retiring it entirely.
 
 ## Security
 

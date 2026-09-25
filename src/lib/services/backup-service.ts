@@ -5,11 +5,12 @@ import { prisma } from "@/lib/db";
 import { householdExportBundleSchema, type HouseholdExportBundle } from "@/lib/validation/backup";
 
 export async function exportHouseholdData(): Promise<HouseholdExportBundle> {
-  const [household, members, areas, tasks, completionEvents] = await Promise.all([
+  const [household, members, areas, tasks, nfcTags, completionEvents] = await Promise.all([
     prisma.household.findUnique({ where: { id: 1 } }),
     prisma.member.findMany(),
     prisma.area.findMany(),
     prisma.task.findMany(),
+    prisma.nfcTag.findMany(),
     prisma.completionEvent.findMany(),
   ]);
 
@@ -20,6 +21,7 @@ export async function exportHouseholdData(): Promise<HouseholdExportBundle> {
     members,
     areas,
     tasks,
+    nfcTags,
     completionEvents,
   };
 }
@@ -29,6 +31,7 @@ export async function importHouseholdData(rawInput: unknown): Promise<void> {
   const data = householdExportBundleSchema.parse(rawInput);
 
   await prisma.$transaction(async (tx) => {
+    await tx.nfcTag.deleteMany();
     await tx.completionEvent.deleteMany();
     await tx.task.deleteMany();
     await tx.area.deleteMany();
@@ -46,6 +49,9 @@ export async function importHouseholdData(rawInput: unknown): Promise<void> {
     }
     for (const task of data.tasks) {
       await tx.task.create({ data: task });
+    }
+    for (const tag of data.nfcTags) {
+      await tx.nfcTag.create({ data: tag });
     }
     for (const event of data.completionEvents) {
       await tx.completionEvent.create({ data: event });

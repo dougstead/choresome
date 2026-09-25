@@ -58,7 +58,9 @@ const BACKUP_FILE_SUFFIX = ".db";
 const randomSuffix = customAlphabet("23456789abcdefghjkmnpqrstuvwxyz", 4);
 
 export function defaultBackupDir(): string {
-  return path.resolve(process.cwd(), "..", "backups");
+  // Sibling of data/ at the project root — mirrors the DATABASE_URL convention
+  // and lines up with the ./backups volume mount in docker-compose.yml.
+  return path.resolve(process.cwd(), "backups");
 }
 
 /**

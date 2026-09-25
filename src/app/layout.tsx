@@ -39,6 +39,13 @@ export const viewport: Viewport = {
   themeColor: "#3e8e7e",
 };
 
+// Every page reads live household/task data on every request (this is a
+// small self-hosted dashboard, not a site that benefits from static
+// generation) — force-dynamic here also means the production build doesn't
+// try to prerender pages against a database, which isn't available at build
+// time (see Dockerfile).
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const settings = await getHouseholdSettings().catch(() => null);
   const theme = settings?.theme.toLowerCase() ?? "system";

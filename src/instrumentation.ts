@@ -3,7 +3,14 @@
  * automatic, timestamped local SQLite backup running without needing any
  * OS-level scheduler — see scripts/run-backup.ts for an alternative if you'd
  * rather drive backups from Windows Task Scheduler instead.
+ *
+ * Declaring this nodejs-only stops Next from also building an edge bundle
+ * for this file — the Node built-ins it (transitively) imports (fs, path)
+ * can't be statically bundled for the edge runtime at all, regardless of
+ * the runtime check below.
  */
+export const runtime = "nodejs";
+
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 

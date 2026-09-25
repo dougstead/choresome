@@ -1,0 +1,15 @@
+services:
+  choresome:
+    build: .
+    image: choresome:latest
+    container_name: choresome
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "file:/app/data/choresome.db"
+      SEED_DEMO_DATA: "false"
+    volumes:
+      # Persistent data lives on the host, outside the disposable container.
+      - ./data:/app/data
+      - ./backups:/app/backups

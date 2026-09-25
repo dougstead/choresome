@@ -4,6 +4,7 @@ import {
   addMonths,
   addWeeks,
   addYears,
+  calendarDateToInstant,
   compareCalendarDates,
   daysInMonth,
   diffInDays,
@@ -110,5 +111,23 @@ describe("instantToCalendarDate", () => {
     const afterChange = new Date("2026-10-25T01:30:00.000Z"); // 01:30 GMT (post fallback)
     expect(instantToCalendarDate(beforeChange, "Europe/London")).toEqual({ year: 2026, month: 10, day: 25 });
     expect(instantToCalendarDate(afterChange, "Europe/London")).toEqual({ year: 2026, month: 10, day: 25 });
+  });
+});
+
+describe("calendarDateToInstant", () => {
+  it("round-trips with instantToCalendarDate", () => {
+    const cd: CalendarDate = { year: 2026, month: 6, day: 15 };
+    const instant = calendarDateToInstant(cd, "Europe/London", 12, 0);
+    expect(instantToCalendarDate(instant, "Europe/London")).toEqual(cd);
+  });
+
+  it("accounts for DST offset (BST is UTC+1 in June)", () => {
+    const instant = calendarDateToInstant({ year: 2026, month: 6, day: 15 }, "Europe/London", 12, 0);
+    expect(instant.toISOString()).toBe("2026-06-15T11:00:00.000Z");
+  });
+
+  it("uses standard time offset outside DST (GMT is UTC+0 in January)", () => {
+    const instant = calendarDateToInstant({ year: 2026, month: 1, day: 15 }, "Europe/London", 12, 0);
+    expect(instant.toISOString()).toBe("2026-01-15T12:00:00.000Z");
   });
 });

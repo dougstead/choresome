@@ -5,6 +5,7 @@ import {
   diffInDays,
   isAfter,
   isSameOrBefore,
+  startOfWeek,
   weekdayOf,
   type CalendarDate,
 } from "@/lib/dates";
@@ -12,10 +13,6 @@ import type { AnnualPattern, FixedCalendarPattern, MonthlyPattern, WeeklyPattern
 
 function nonNegativeMod(n: number, m: number): number {
   return ((n % m) + m) % m;
-}
-
-function startOfWeek(cd: CalendarDate): CalendarDate {
-  return addDays(cd, -weekdayOf(cd));
 }
 
 function weeklyOccurrenceOn(cd: CalendarDate, pattern: WeeklyPattern): boolean {

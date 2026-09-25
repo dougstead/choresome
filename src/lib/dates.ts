@@ -103,6 +103,15 @@ export function addYears(cd: CalendarDate, amount: number): CalendarDate {
   return addMonths(cd, amount * 12);
 }
 
+/** Sunday of the week containing `cd` (weeks start Sunday, matching weekdayOf's 0=Sunday convention). */
+export function startOfWeek(cd: CalendarDate): CalendarDate {
+  return addDays(cd, -weekdayOf(cd));
+}
+
+export function startOfMonth(cd: CalendarDate): CalendarDate {
+  return { year: cd.year, month: cd.month, day: 1 };
+}
+
 export function weekdayOf(cd: CalendarDate): number {
   // 0 = Sunday .. 6 = Saturday, matching Date#getUTCDay().
   return new Date(Date.UTC(cd.year, cd.month - 1, cd.day)).getUTCDay();
@@ -131,6 +140,31 @@ export function calendarDateToUtcDate(cd: CalendarDate): Date {
 
 export function utcDateToCalendarDate(date: Date): CalendarDate {
   return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
+}
+
+/** UTC offset (in minutes) of `timeZone` at the given instant, e.g. 60 for BST. */
+function timeZoneOffsetMinutes(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(instant);
+  const get = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? "0");
+  const hour = get("hour") % 24; // Intl can report 24 for midnight in some locales/environments.
+  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), hour, get("minute"), get("second"));
+  return (asUtc - instant.getTime()) / 60_000;
+}
+
+/** The real instant corresponding to a given time-of-day on `cd`, in `timeZone` (DST-aware). */
+export function calendarDateToInstant(cd: CalendarDate, timeZone: string, hour = 0, minute = 0): Date {
+  const guess = new Date(Date.UTC(cd.year, cd.month - 1, cd.day, hour, minute));
+  const offsetMinutes = timeZoneOffsetMinutes(guess, timeZone);
+  return new Date(guess.getTime() - offsetMinutes * 60_000);
 }
 
 export function calendarDateToIsoDate(cd: CalendarDate): string {

@@ -9,6 +9,7 @@ import { useMembers, useTasks } from "@/hooks/use-household-data";
 import { getTaskStatus, type TaskStatus } from "@/lib/task-status";
 import { formatDueLabel, formatRelativeTime } from "@/lib/format";
 import { fetcher, postJson } from "@/lib/client/fetcher";
+import { JOINT_CHOICE } from "@/components/member-picker-sheet";
 import type { CompletionEventWithTaskDto, TaskDto } from "@/lib/api/types";
 import type { DisplayConfig } from "@/lib/validation/settings";
 
@@ -69,7 +70,7 @@ export function DisplayApp({
 
   async function handlePick(task: TaskDto, memberId: string, memberName: string) {
     setMode({ kind: "confirmed", taskName: task.name, memberName });
-    await postJson(`/api/tasks/${task.id}/complete`, { memberId });
+    await postJson(`/api/tasks/${task.id}/complete`, memberId === JOINT_CHOICE ? { joint: true } : { memberId });
     await revalidateEverything();
     setTimeout(() => setMode({ kind: "dashboard" }), 1600);
   }
@@ -188,6 +189,16 @@ export function DisplayApp({
                 {member.name.toUpperCase()}
               </button>
             ))}
+            {mode.task.allowJoint ? (
+              <button
+                onClick={() => handlePick(mode.task, JOINT_CHOICE, "Joint effort")}
+                className="col-span-2 flex items-center justify-center gap-4 rounded-3xl bg-white py-8 text-3xl font-extrabold shadow-2xl transition active:scale-95"
+                style={{ color: "#2b2621" }}
+              >
+                <span className="text-6xl">🤝</span>
+                JOINT EFFORT
+              </button>
+            ) : null}
           </div>
           <button onClick={() => setMode({ kind: "dashboard" })} className="text-lg font-bold text-white/70">
             Cancel

@@ -17,6 +17,7 @@ export const createTaskSchema = z.object({
   estimatedDurationMinutes: z.number().int().min(1).max(1440).nullable().optional(),
   priority: prioritySchema.optional(),
   icon: z.string().trim().min(1).max(8).optional(),
+  allowJoint: z.boolean().optional(),
 });
 
 export const updateTaskSchema = z.object({
@@ -29,6 +30,7 @@ export const updateTaskSchema = z.object({
   estimatedDurationMinutes: z.number().int().min(1).max(1440).nullable().optional(),
   priority: prioritySchema.optional(),
   icon: z.string().trim().min(1).max(8).optional(),
+  allowJoint: z.boolean().optional(),
   active: z.boolean().optional(),
 });
 

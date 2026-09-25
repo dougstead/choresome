@@ -25,6 +25,8 @@ const memberExportSchema = z.object({
   color: z.string().nullable(),
   active: z.boolean(),
   order: z.number(),
+  // Defaulted so exports taken before "Joint effort" existed still import cleanly.
+  isJoint: z.boolean().default(false),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });
@@ -54,6 +56,7 @@ const taskExportSchema = z.object({
   estimatedDurationMinutes: z.number().nullable(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH"]),
   icon: z.string(),
+  allowJoint: z.boolean().default(false),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 });

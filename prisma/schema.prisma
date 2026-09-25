@@ -65,6 +65,9 @@ model Member {
   color  String? // optional hex accent, e.g. "#4F8EF7"
   active Boolean @default(true)
   order  Int     @default(0)
+  /// The single system-managed "Joint effort" member, used when a task is done together.
+  /// Hidden from member lists/pickers; stats credit a joint completion to every real member.
+  isJoint Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -118,6 +121,8 @@ model Task {
   estimatedDurationMinutes Int?
   priority                 Priority @default(MEDIUM)
   icon                     String   @default("🧽")
+  /// When true, completing always asks who did it and offers "Joint effort".
+  allowJoint               Boolean  @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -35,6 +35,7 @@ export interface TaskDto {
   estimatedDurationMinutes: number | null;
   priority: "LOW" | "MEDIUM" | "HIGH";
   icon: string;
+  allowJoint: boolean;
   createdAt: string;
   updatedAt: string;
 }

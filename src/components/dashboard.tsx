@@ -63,7 +63,7 @@ export function Dashboard({
                 todayIso={todayIso}
                 upcomingWindowDays={upcomingWindowDays}
                 busy={busyTaskId === task.id}
-                onComplete={() => requestComplete(task.id, task.name)}
+                onComplete={() => requestComplete(task.id, task.name, task.allowJoint)}
               />
             )}
           />
@@ -78,7 +78,7 @@ export function Dashboard({
                 todayIso={todayIso}
                 upcomingWindowDays={upcomingWindowDays}
                 busy={busyTaskId === task.id}
-                onComplete={() => requestComplete(task.id, task.name)}
+                onComplete={() => requestComplete(task.id, task.name, task.allowJoint)}
               />
             )}
           />
@@ -93,7 +93,7 @@ export function Dashboard({
                 todayIso={todayIso}
                 upcomingWindowDays={upcomingWindowDays}
                 busy={busyTaskId === task.id}
-                onComplete={() => requestComplete(task.id, task.name)}
+                onComplete={() => requestComplete(task.id, task.name, task.allowJoint)}
               />
             )}
           />
@@ -140,6 +140,7 @@ export function Dashboard({
         <MemberPickerSheet
           title={`Who did "${pendingTask.name}"?`}
           members={members}
+          allowJoint={pendingTask.allowJoint}
           onSelect={(memberId) => completeWithMember(pendingTask.id, memberId, pendingTask.name)}
           onClose={cancelPending}
         />

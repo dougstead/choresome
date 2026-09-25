@@ -53,6 +53,7 @@ export async function createTask(input: CreateTaskInput) {
       estimatedDurationMinutes: input.estimatedDurationMinutes ?? null,
       priority: input.priority ?? "MEDIUM",
       icon: input.icon ?? "🧽",
+      allowJoint: input.allowJoint ?? false,
     },
     include: { area: true, defaultAssignee: true },
   });
@@ -94,6 +95,7 @@ export async function updateTask(id: string, input: UpdateTaskInput) {
     ...(input.estimatedDurationMinutes !== undefined ? { estimatedDurationMinutes: input.estimatedDurationMinutes } : {}),
     ...(input.priority !== undefined ? { priority: input.priority } : {}),
     ...(input.icon !== undefined ? { icon: input.icon } : {}),
+    ...(input.allowJoint !== undefined ? { allowJoint: input.allowJoint } : {}),
     ...(input.active !== undefined ? { active: input.active, archivedAt: input.active ? null : new Date() } : {}),
   };
 

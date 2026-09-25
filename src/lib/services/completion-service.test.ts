@@ -287,3 +287,31 @@ describe("listHistory filters", () => {
     expect(byRange.events[0]?.taskId).toBe(taskB.id);
   });
 });
+
+describe("recordCompletion — joint effort", () => {
+  const rule: CompletionRelativeRule = { type: "COMPLETION_RELATIVE", intervalValue: 7, intervalUnit: "days" };
+
+  it("records against one shared system member, created on first use and hidden from member lists", async () => {
+    const { area } = await seed();
+    const task = await createTask({ name: "Hoover", areaId: area.id, recurrenceRule: rule, allowJoint: true });
+    expect(task.allowJoint).toBe(true);
+
+    const first = await recordCompletion({ taskId: task.id, joint: true, completedAt: new Date("2026-09-01T09:00:00Z") });
+    const second = await recordCompletion({ taskId: task.id, joint: true, completedAt: new Date("2026-09-10T09:00:00Z") });
+
+    expect(first.event.member.isJoint).toBe(true);
+    expect(first.event.member.name).toBe("Joint effort");
+    expect(second.event.memberId).toBe(first.event.memberId);
+    expect(await prisma.member.count({ where: { isJoint: true } })).toBe(1);
+
+    const { listMembers } = await import("./member-service");
+    expect((await listMembers()).map((m) => m.name).sort()).toEqual(["Doug", "Sarah"]);
+  });
+
+  it("still advances the schedule like any other completion", async () => {
+    const { area } = await seed();
+    const task = await createTask({ name: "Hoover", areaId: area.id, recurrenceRule: rule, allowJoint: true });
+    const result = await recordCompletion({ taskId: task.id, joint: true, completedAt: new Date("2026-09-30T10:00:00Z") });
+    expect(utcDateToCalendarDate(result.task.dueDate)).toEqual({ year: 2026, month: 10, day: 7 });
+  });
+});

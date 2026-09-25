@@ -35,6 +35,7 @@ interface FormState {
   annualMonth: number;
   annualDay: number;
   anchorDate: { year: number; month: number; day: number };
+  allowJoint: boolean;
   reminderOnDue: boolean;
   reminderOnOverdue: boolean;
   reminderDaysBefore: string;
@@ -60,6 +61,7 @@ function initialStateFromTask(task: TaskDto | undefined): FormState {
     annualMonth: 1,
     annualDay: 1,
     anchorDate: todayCalendarDate(),
+    allowJoint: task?.allowJoint ?? false,
     reminderOnDue: task?.reminderConfig?.onDue ?? true,
     reminderOnOverdue: task?.reminderConfig?.onOverdue ?? true,
     reminderDaysBefore: task?.reminderConfig?.daysBefore?.[0] ? String(task.reminderConfig.daysBefore[0]) : "",
@@ -163,6 +165,7 @@ export function TaskForm({ task, defaultAreaId }: { task?: TaskDto; defaultAreaI
         areaId: state.areaId,
         icon: state.icon,
         priority: state.priority,
+        allowJoint: state.allowJoint,
         defaultAssigneeId: state.defaultAssigneeId || null,
         estimatedDurationMinutes: state.estimatedDurationMinutes ? Number(state.estimatedDurationMinutes) : null,
         recurrenceRule: rule,
@@ -420,6 +423,21 @@ export function TaskForm({ task, defaultAreaId }: { task?: TaskDto; defaultAreaI
           <span>days before</span>
         </label>
       </fieldset>
+
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={state.allowJoint}
+          onChange={(e) => set("allowJoint", e.target.checked)}
+        />
+        <span>
+          <span className="font-bold">Can be done jointly</span>
+          <span className="block text-xs text-text-muted">
+            Completing always asks who did it, with a &ldquo;Joint effort&rdquo; option that credits everyone.
+          </span>
+        </span>
+      </label>
 
       <label className="block">
         <span className="mb-1.5 block text-sm font-bold">Default assignee</span>

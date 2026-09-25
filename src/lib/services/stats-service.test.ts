@@ -72,3 +72,26 @@ describe("getHouseholdStats", () => {
     expect(person?.count).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("joint effort in stats", () => {
+  it("credits a joint completion to every active member, once each", async () => {
+    const { area, doug, sarah } = await seed();
+    const rule: CompletionRelativeRule = { type: "COMPLETION_RELATIVE", intervalValue: 7, intervalUnit: "days" };
+    const task = await createTask({ name: "Hoover", areaId: area.id, recurrenceRule: rule, allowJoint: true });
+
+    await recordCompletion({ taskId: task.id, memberId: doug.id, completedAt: new Date() });
+    await recordCompletion({ taskId: task.id, joint: true, completedAt: new Date(Date.now() + 1000) });
+
+    const perTask = await getTaskStats(task.id);
+    expect(perTask.totalCompletions).toBe(2);
+    const counts = Object.fromEntries(perTask.completionsByMember.map((c) => [c.memberName, c.count]));
+    expect(counts).toEqual({ Doug: 2, Sarah: 1 });
+    expect(perTask.lastCompletedByMemberName).toBe("Joint effort");
+
+    const household = await getHouseholdStats();
+    expect(household.completedThisMonth).toBe(2); // events, not credits
+    const byPerson = Object.fromEntries(household.completionsByPerson.map((c) => [c.memberName, c.count]));
+    expect(byPerson).toEqual({ Doug: 2, Sarah: 1 });
+    expect(sarah.id).toBeTruthy();
+  });
+});

@@ -62,6 +62,17 @@ overwritten.
 This logic lives in one place — [`src/lib/recurrence`](src/lib/recurrence) —
 and is the most heavily tested part of the app (see [Testing](#testing)).
 
+### Joint effort
+
+Tick **Can be done jointly** on a task (in its edit form) for chores you
+sometimes do together. Marking that task complete then always asks who did
+it, even on a device that normally completes with one tap, and offers
+**Joint effort** alongside each person. A joint completion is one history
+entry ("Joint effort") and counts towards every active member in the stats.
+Behind the scenes it's recorded against a hidden system member, so it never
+appears in the member list. NFC taps still complete as the device's
+remembered member (use Undo to correct one).
+
 ## Architecture
 
 A single Next.js application serves both the API and the UI:

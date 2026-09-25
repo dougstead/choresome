@@ -1,8 +1,17 @@
 import { prisma } from "@/lib/db";
 import { calendarDateToUtcDate, instantToCalendarDate, startOfMonth, startOfWeek } from "@/lib/dates";
 import { getHouseholdSettings } from "./settings-service";
+import { listMembers } from "./member-service";
 
 const DAY_MS = 86_400_000;
+
+type Credited = { id: string; name: string };
+
+/** Who a completion counts for in per-person stats: a "Joint effort" credits every active member. */
+function creditedTo(event: { memberId: string; member: { name: string; isJoint: boolean } }, activeMembers: Credited[]): Credited[] {
+  if (!event.member.isJoint) return [{ id: event.memberId, name: event.member.name }];
+  return activeMembers;
+}
 
 export interface TaskStats {
   totalCompletions: number;
@@ -51,11 +60,14 @@ export async function getTaskStats(taskId: string): Promise<TaskStats> {
   const averageIntervalDays = gaps.length > 0 ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
   const longestIntervalDays = gaps.length > 0 ? Math.max(...gaps) : null;
 
+  const activeMembers = await listMembers();
   const byMember = new Map<string, { memberName: string; count: number }>();
   for (const event of events) {
-    const existing = byMember.get(event.memberId);
-    if (existing) existing.count += 1;
-    else byMember.set(event.memberId, { memberName: event.member.name, count: 1 });
+    for (const person of creditedTo(event, activeMembers)) {
+      const existing = byMember.get(person.id);
+      if (existing) existing.count += 1;
+      else byMember.set(person.id, { memberName: person.name, count: 1 });
+    }
   }
 
   const lastEvent = events[events.length - 1];
@@ -102,12 +114,15 @@ export async function getHouseholdStats(options: { recentActivityLimit?: number 
     recentActivityQuery(options.recentActivityLimit ?? 20),
   ]);
 
+  const activeMembers = await listMembers();
   const byPerson = new Map<string, { memberName: string; count: number }>();
   const byArea = new Map<string, { areaName: string; count: number }>();
   for (const event of thisMonthEvents) {
-    const person = byPerson.get(event.memberId);
-    if (person) person.count += 1;
-    else byPerson.set(event.memberId, { memberName: event.member.name, count: 1 });
+    for (const credited of creditedTo(event, activeMembers)) {
+      const person = byPerson.get(credited.id);
+      if (person) person.count += 1;
+      else byPerson.set(credited.id, { memberName: credited.name, count: 1 });
+    }
 
     const area = byArea.get(event.task.areaId);
     if (area) area.count += 1;

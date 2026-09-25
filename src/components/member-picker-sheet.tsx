@@ -1,5 +1,8 @@
 "use client";
 
+/** Passed to onSelect instead of a member id when "Joint effort" is chosen. */
+export const JOINT_CHOICE = "__joint__";
+
 interface MemberOption {
   id: string;
   name: string;
@@ -9,11 +12,14 @@ interface MemberOption {
 export function MemberPickerSheet({
   title,
   members,
+  allowJoint = false,
   onSelect,
   onClose,
 }: {
   title: string;
   members: MemberOption[];
+  /** Offer a "Joint effort" choice (for tasks done together). */
+  allowJoint?: boolean;
   onSelect: (memberId: string) => void;
   onClose: () => void;
 }) {
@@ -37,6 +43,15 @@ export function MemberPickerSheet({
             </button>
           ))}
         </div>
+        {allowJoint ? (
+          <button
+            onClick={() => onSelect(JOINT_CHOICE)}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-border bg-surface-alt py-4 text-lg font-bold transition active:scale-95 active:border-primary"
+          >
+            <span className="text-2xl">🤝</span>
+            Joint effort
+          </button>
+        ) : null}
         <button
           onClick={onClose}
           className="mt-4 w-full rounded-2xl py-3 text-center text-sm font-semibold text-text-muted"

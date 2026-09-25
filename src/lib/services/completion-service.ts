@@ -4,6 +4,7 @@ import { computeNextDueDate } from "@/lib/recurrence";
 import { parseRecurrenceRule } from "@/lib/recurrence/serialize";
 import type { RecordCompletionInput, UpdateCompletionInput } from "@/lib/validation/completion";
 import { getHouseholdSettings } from "./settings-service";
+import { getJointMember } from "./member-service";
 import { dueDateForNewOrEditedRule } from "./scheduling";
 
 // Default dedup window for manual completion (dashboard/task-detail double-tap protection).
@@ -36,11 +37,13 @@ export async function recordCompletion(
   const dedupeWindowMs = options.dedupeWindowMs ?? DUPLICATE_TAP_WINDOW_MS;
   const task = await prisma.task.findUniqueOrThrow({ where: { id: input.taskId } });
   const completedAt = input.completedAt ?? new Date();
+  const memberId = input.joint ? (await getJointMember()).id : input.memberId;
+  if (!memberId) throw new Error("recordCompletion needs a memberId or joint: true");
 
   const recentDuplicate = await prisma.completionEvent.findFirst({
     where: {
       taskId: input.taskId,
-      memberId: input.memberId,
+      memberId,
       completedAt: { gte: new Date(completedAt.getTime() - dedupeWindowMs) },
     },
     orderBy: { completedAt: "desc" },
@@ -60,7 +63,7 @@ export async function recordCompletion(
     prisma.completionEvent.create({
       data: {
         taskId: input.taskId,
-        memberId: input.memberId,
+        memberId,
         completedAt,
         note: input.note,
         dueDateAtCompletion: task.dueDate,

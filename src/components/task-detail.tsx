@@ -97,7 +97,7 @@ export function TaskDetail({
 
       {task.active ? (
         <button
-          onClick={() => requestComplete(task.id, task.name)}
+          onClick={() => requestComplete(task.id, task.name, task.allowJoint)}
           disabled={busy}
           className="flex w-full items-center justify-center gap-2 rounded-full py-4 text-base font-extrabold disabled:opacity-60"
           style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}
@@ -136,6 +136,7 @@ export function TaskDetail({
         <MemberPickerSheet
           title={`Who did "${pendingTask.name}"?`}
           members={members}
+          allowJoint={pendingTask.allowJoint}
           onSelect={(memberId) => completeWithMember(pendingTask.id, memberId, pendingTask.name)}
           onClose={cancelPending}
         />

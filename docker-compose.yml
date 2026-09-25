@@ -5,7 +5,9 @@ services:
     container_name: choresome
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Fixed host port — reachable directly as a fallback even without Caddy/DNS,
+      # e.g. http://<mini-pc-ip>:3010.
+      - "3010:3000"
     environment:
       DATABASE_URL: "file:/app/data/choresome.db"
       SEED_DEMO_DATA: "false"
@@ -13,3 +15,25 @@ services:
       # Persistent data lives on the host, outside the disposable container.
       - ./data:/app/data
       - ./backups:/app/backups
+
+  # Reverse proxy giving the app a friendly LAN hostname with no port in the
+  # URL. Plain HTTP only for now (see README — HTTPS on a .home.arpa name
+  # needs its own local CA trusted on every device, which is a bigger step
+  # this doesn't take unasked). Requires the router to point that hostname
+  # at this machine — see README "Friendly hostname with Caddy".
+  caddy:
+    image: caddy:2-alpine
+    container_name: choresome-caddy
+    restart: unless-stopped
+    depends_on:
+      - choresome
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -237,8 +237,15 @@ docker compose up -d --build
 
 This builds the image, creates `./data` and `./backups` folders next to
 `docker-compose.yml` (mounted into the container so your data survives
-container rebuilds/updates), runs migrations, and starts the server on port
-3000.
+container rebuilds/updates), runs migrations, and starts:
+
+- **choresome** — the app itself, fixed to host port **3010** (not the
+  container's default 3000 — pinned explicitly since a mini PC hosting more
+  than one thing shouldn't leave any of them on "whatever the framework
+  defaults to"). Reachable directly at `http://<mini-pc-address>:3010`.
+- **caddy** — a reverse proxy on port 80 giving the app a friendly hostname
+  with no port in the URL. See [Friendly hostname with
+  Caddy](#5b-friendly-hostname-with-caddy) below to configure the hostname.
 
 To update after pulling new code:
 
@@ -248,17 +255,19 @@ docker compose up -d --build
 
 Migrations run automatically on startup; your data in `./data` is untouched.
 
-**Using a different port** (e.g. if something else on the mini PC already
-uses 3000): edit the `ports` line in `docker-compose.yml` — only the left
-side changes, since that's the host port:
+**Using a different port**: edit the `choresome` service's `ports` line in
+`docker-compose.yml` — only the left side changes, since that's the host
+port:
 
 ```yaml
 ports:
-  - "8080:3000"   # visit http://<mini-pc-address>:8080 instead
+  - "8080:3000"   # visit http://<mini-pc-address>:8080 instead of :3010
 ```
 
 Then `docker compose up -d --build` again. The container's internal port
-(3000) doesn't need to change.
+(3000) doesn't need to change, and neither does Caddy's config (it talks to
+the `choresome` container over the internal Docker network, not through the
+published host port).
 
 ### Option B: Plain Node.js (no Docker)
 
@@ -307,7 +316,7 @@ docker compose up -d --build
 ```
 
 Check it's running: `docker compose ps`, and open
-`http://localhost:3000` in a browser **on the mini PC** to confirm before
+`http://localhost:3010` in a browser **on the mini PC** to confirm before
 moving to other devices.
 
 ### 5. Find the mini PC's LAN address
@@ -318,35 +327,59 @@ ipconfig
 
 Look for the `IPv4 Address` under your active adapter (e.g. `192.168.1.42`).
 Other devices on the same Wi-Fi/network reach the app at
-`http://192.168.1.42:3000`. A static DHCP reservation for the mini PC (set
-in your router) is worth doing so this address doesn't change later.
+`http://192.168.1.42:3010`. A static DHCP reservation for the mini PC (set
+in your router) is worth doing so this address doesn't change later — and
+is what the Caddy hostname below points at, so it needs to stay put.
 
-### 5b. Give it a friendly hostname (optional)
+### 5b. Friendly hostname with Caddy
 
-Typing an IP address every time is easy to forget. If your router supports
-custom local DNS entries (often called "Local DNS", "DNS Rewrites", "Static
-DNS", or similar — common on router firmware like AdGuard Home, Pi-hole,
-OPNsense/pfSense, and some ASUS/Netgear/Ubiquiti models):
+Typing an IP address (and a port) every time is easy to forget. The
+`docker-compose.yml` in this repo already includes
+[Caddy](https://caddyserver.com/) as a reverse proxy, configured (via the
+`Caddyfile` at the repo root) to serve the app at `chores.home.arpa` — a
+name under the [`.home.arpa`](https://datatracker.ietf.org/doc/html/rfc8375)
+special-use domain reserved specifically for home networks, so it'll never
+clash with a real internet domain. Two things make that name actually work:
 
-1. In the router's admin page, find that DNS section and add an entry
-   mapping a hostname straight to the mini PC's LAN IP, e.g.:
+**1. Point the hostname at the mini PC, in your router.** Look for a
+section your router firmware calls "Local DNS", "DNS Rewrites", "Static
+DNS", or similar (common on AdGuard Home, Pi-hole, OPNsense/pfSense, and
+some ASUS/Netgear/Ubiquiti models) and add an entry:
 
-   | Hostname | Points to |
-   |---|---|
-   | `choresome.home` | `192.168.50.9` |
+| Hostname | Points to |
+|---|---|
+| `chores.home.arpa` | *(the mini PC's LAN IP — see step 5)* |
 
-   Use a name with a dot in it (`choresome.home`, `choresome.lan`) rather
-   than a single bare word — most phone browsers treat an address with no
-   dot as a search-engine query instead of a hostname to look up.
-2. Everyone on the network can then use `http://choresome.home:3000`
-   instead of the raw IP (still with the port — this doesn't set up HTTPS
-   or hide the port number, it's just a name for the same address). It can
-   take a minute for devices to pick up the change, or a Wi-Fi
-   reconnect/reboot on stubborn ones.
-3. If the router doesn't support custom DNS entries at all, the plain IP
-   address (with the static DHCP reservation from step 5) is the simplest
-   reliable fallback — bookmark it on each device / use it as the PWA
-   install URL instead.
+If your router has no such feature, `chores.home.arpa` won't resolve for
+anyone and you're back to using the plain IP with port 3010 — see the
+fallback note at the end of this section.
+
+**2. Use a different hostname instead**, if you'd rather — just change it
+in two places and redeploy:
+
+```
+# Caddyfile
+http://your-name.home.arpa {
+	reverse_proxy choresome:3000
+}
+```
+
+then `docker compose up -d --build` again, and point the router's DNS entry
+at the new name instead.
+
+Once both are in place, everyone on the network can use
+`http://chores.home.arpa` — no port, nothing to remember beyond the one
+name. It can take a minute for devices to pick up a new DNS entry, or a
+Wi-Fi reconnect/reboot on stubborn ones. The direct `http://<mini-pc-ip>:3010`
+address (see step 5) keeps working exactly the same either way — Caddy is
+an addition, not a replacement.
+
+This is plain HTTP, not HTTPS — `chores.home.arpa` isn't a publicly
+resolvable name, so no certificate authority can issue it a real
+certificate. `.home.arpa` names are still eligible for a locally-trusted
+certificate from Caddy's own internal CA, but that means installing
+Caddy's root certificate on every phone/device yourself, which is a
+meaningfully bigger step this setup doesn't take unasked.
 
 ### 6. Start automatically after a reboot
 
@@ -411,7 +444,12 @@ This matters most here — completion history is meant to last years.
 
 ## Installing the PWA on Android
 
-1. Open `http://<mini-pc-address>:3000` in Chrome on the phone.
+1. Open `http://chores.home.arpa` in Chrome on the phone (once the Caddy
+   hostname is set up — see [5b](#5b-friendly-hostname-with-caddy) — or
+   `http://<mini-pc-address>:3010` otherwise). Prefer the hostname if it's
+   available: installing an app and each device's "who am I" preference are
+   both tied to the exact URL used, so switching between the IP and the
+   hostname later means reinstalling / re-picking the device's person.
 2. Chrome shows an "Install app" prompt automatically, or open the ⋮ menu →
    "Add to Home screen" / "Install app".
 3. Launch it from the home screen icon — it opens without browser
@@ -428,7 +466,8 @@ foreground reminders described below).
 
 1. On the old Pixel 8, connect to the same Wi-Fi as the mini PC and keep it
    permanently plugged into power.
-2. Open `http://<mini-pc-address>:3000/display` in Chrome.
+2. Open `http://chores.home.arpa/display` in Chrome (or
+   `http://<mini-pc-address>:3010/display`).
 3. Add it to the home screen (see above) so it can be launched full-screen,
    or use the ⛶ button in the top-right corner of the display itself to
    enter fullscreen from the browser tab.
@@ -522,22 +561,33 @@ physical tag unless you're retiring it entirely.
 
 Choresome has **no built-in authentication** — it's designed for a trusted
 home network only. **Do not expose it directly to the public internet**
-(no port-forwarding your router's port 3000 to it, no putting it on a
-public domain without adding your own reverse proxy + auth in front of it).
+(no port-forwarding your router's port 3010 or 80 to it, no putting
+`chores.home.arpa` — or any hostname pointing at it — on public DNS).
+The bundled Caddy reverse proxy is there purely for a friendly *local*
+hostname and adds no authentication of its own; it isn't a step towards
+internet exposure.
 
 The service layer and data model don't assume any particular auth story, so
-basic auth or a reverse-proxy-based login could be added later without
+basic auth (Caddy supports this natively, via `basic_auth` in the
+Caddyfile) or a reverse-proxy-based login could be added later without
 reshaping the app — see [Known limitations](#known-limitations--future-extensibility).
 
 ## Troubleshooting
 
 **Can't reach it from my phone, but it works on the mini PC itself.**
-Check Windows Firewall isn't blocking inbound connections on port 3000
-(Docker Desktop usually configures this automatically; for the Node path
-you may need to allow `node.exe` / port 3000 in Windows Defender Firewall
-→ Advanced settings → Inbound Rules). Also confirm the phone is on the same
-Wi-Fi network as the mini PC (not, e.g., a guest network that isolates
-devices from each other).
+Check Windows Firewall isn't blocking inbound connections on ports 3010 and
+80 (Docker Desktop usually configures this automatically the first time it
+asks for network permission; for the Node-only path you may need to allow
+`node.exe` / the port explicitly in Windows Defender Firewall → Advanced
+settings → Inbound Rules). Also confirm the phone is on the same Wi-Fi
+network as the mini PC (not, e.g., a guest network that isolates devices
+from each other).
+
+**`chores.home.arpa` doesn't resolve / times out, but the IP:port works.**
+The router-side DNS entry either isn't set up yet or hasn't propagated —
+see [5b](#5b-friendly-hostname-with-caddy). Use `http://<mini-pc-ip>:3010`
+in the meantime; nslookup/ping the hostname from another device to check
+whether it's resolving at all.
 
 **The site shows "Can't reach Choresome" (offline page).**
 The service worker is showing its offline fallback because the server isn't

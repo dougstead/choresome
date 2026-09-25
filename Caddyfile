@@ -1,0 +1,12 @@
+# Choresome reverse proxy.
+#
+# http:// as the scheme tells Caddy to serve this plainly over HTTP and
+# never attempt automatic HTTPS/ACME for it — correct here, since
+# chores.home.arpa isn't a publicly resolvable name a certificate
+# authority could ever issue a real certificate for.
+#
+# Change the hostname below if you pick a different one, and update the
+# router DNS entry (and the README) to match.
+http://chores.home.arpa {
+	reverse_proxy choresome:3000
+}

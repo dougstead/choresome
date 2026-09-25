@@ -53,6 +53,11 @@ overwritten.
   late doesn't permanently drag bin day later — it's still due next
   Thursday. Good for things tied to an external schedule (collection day,
   a service due date).
+  Weekly and monthly fixed schedules have a **Starting from** date: nothing
+  is due before it, and for "every 2 weeks" (or longer) it decides which
+  weeks count. Alternating bins are just two tasks — *Recycling* and *Food
+  waste* weekly, *General waste* every 2 weeks with a Starting-from date in
+  a week the general bin goes out.
 
 This logic lives in one place — [`src/lib/recurrence`](src/lib/recurrence) —
 and is the most heavily tested part of the app (see [Testing](#testing)).

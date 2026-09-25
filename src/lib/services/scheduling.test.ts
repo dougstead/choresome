@@ -35,7 +35,7 @@ describe("dueDateForNewOrEditedRule", () => {
   it("reschedules from the last completion under the new rule (fixed-calendar)", () => {
     const rule: FixedCalendarRule = {
       type: "FIXED_CALENDAR",
-      pattern: { pattern: "weekly", weekdays: [4], intervalWeeks: 1, anchorDate: today },
+      pattern: { pattern: "weekly", weekdays: [4], intervalWeeks: 1, anchorDate: { year: 2026, month: 9, day: 1 } },
     };
     const latest = { year: 2026, month: 9, day: 20 }; // a Sunday
     expect(dueDateForNewOrEditedRule({ rule, fallbackAnchor: today, latestCompletionDate: latest })).toEqual({
@@ -43,5 +43,20 @@ describe("dueDateForNewOrEditedRule", () => {
       month: 9,
       day: 24, // next Thursday strictly after Sept 20
     });
+  });
+});
+
+describe("dueDateForNewOrEditedRule — 'Starting from' date", () => {
+  it("a future start date wins over an earlier occurrence implied by past completions", () => {
+    const rule: FixedCalendarRule = {
+      type: "FIXED_CALENDAR",
+      pattern: { pattern: "weekly", weekdays: [3], intervalWeeks: 2, anchorDate: { year: 2026, month: 10, day: 7 } },
+    };
+    const due = dueDateForNewOrEditedRule({
+      rule,
+      fallbackAnchor: { year: 2026, month: 9, day: 25 },
+      latestCompletionDate: { year: 2026, month: 9, day: 20 },
+    });
+    expect(due).toEqual({ year: 2026, month: 10, day: 7 });
   });
 });

@@ -67,3 +67,30 @@ describe("computeNextDueDate — fixed-calendar", () => {
     expect(next).toEqual({ year: 2026, month: 10, day: 1 });
   });
 });
+
+describe("initialDueDate — 'Starting from' date", () => {
+  // Bin day is Wednesday. General waste is fortnightly, starting Wed 2026-10-07.
+  const general: FixedCalendarRule = {
+    type: "FIXED_CALENDAR",
+    pattern: { pattern: "weekly", weekdays: [3], intervalWeeks: 2, anchorDate: { year: 2026, month: 10, day: 7 } },
+  };
+
+  it("a future start date is the first due date, even if other Wednesdays come sooner", () => {
+    // Today is Fri 2026-09-25; Wed 09-30 would be sooner but is in an 'off' week AND before the start.
+    expect(initialDueDate(general, { year: 2026, month: 9, day: 25 })).toEqual({ year: 2026, month: 10, day: 7 });
+  });
+
+  it("a past start date keeps its week parity: only every second Wednesday counts", () => {
+    // Started Wed 09-09 (an 'on' week). Today Fri 09-25 -> 09-23 is 'on', 09-30 is 'off'... next 'on' is 10-07.
+    const rule: FixedCalendarRule = {
+      type: "FIXED_CALENDAR",
+      pattern: { pattern: "weekly", weekdays: [3], intervalWeeks: 2, anchorDate: { year: 2026, month: 9, day: 9 } },
+    };
+    expect(initialDueDate(rule, { year: 2026, month: 9, day: 25 })).toEqual({ year: 2026, month: 10, day: 7 });
+  });
+
+  it("completing a fortnightly task schedules the next one two weeks later", () => {
+    const due = { year: 2026, month: 10, day: 7 };
+    expect(computeNextDueDate(general, { completedOn: due, previousDueDate: due })).toEqual({ year: 2026, month: 10, day: 21 });
+  });
+});

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { describeRecurrence, type IntervalUnit, type RecurrenceRule } from "@/lib/recurrence";
+import { calendarDateToIsoDate } from "@/lib/dates";
 import { postJson, patchJson } from "@/lib/client/fetcher";
 import { useAreas, useMembers } from "@/hooks/use-household-data";
 import type { TaskDto } from "@/lib/api/types";
@@ -342,6 +343,25 @@ export function TaskForm({ task, defaultAreaId }: { task?: TaskDto; defaultAreaI
                 />
                 <span>month(s)</span>
               </div>
+            )}
+
+            {state.fixedPattern !== "annual" && (
+              <label className="block text-sm">
+                <span className="font-semibold">Starting from</span>
+                <input
+                  type="date"
+                  value={calendarDateToIsoDate(state.anchorDate)}
+                  onChange={(e) => {
+                    const [year, month, day] = e.target.value.split("-").map(Number);
+                    if (year && month && day) set("anchorDate", { year, month, day });
+                  }}
+                  className="ml-2 rounded-[var(--radius-control)] border border-border bg-surface px-2 py-1.5"
+                />
+                <span className="mt-1 block text-xs text-text-muted">
+                  Nothing is due before this date. For &ldquo;every 2 weeks&rdquo; or longer, pick a date in a week
+                  it <em>should</em> happen &mdash; that fixes which weeks count.
+                </span>
+              </label>
             )}
 
             {state.fixedPattern === "annual" && (

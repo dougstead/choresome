@@ -1,5 +1,5 @@
-import type { CalendarDate } from "@/lib/dates";
-import { computeNextDueDate, initialDueDate, type RecurrenceRule } from "@/lib/recurrence";
+import { isAfter, type CalendarDate } from "@/lib/dates";
+import { computeNextDueDate, fixedRuleStartDate, initialDueDate, type RecurrenceRule } from "@/lib/recurrence";
 
 /**
  * Due date to give a task when it's created, or when its recurrence rule is
@@ -18,8 +18,11 @@ export function dueDateForNewOrEditedRule(params: {
   if (!params.latestCompletionDate) {
     return initialDueDate(params.rule, params.fallbackAnchor);
   }
-  return computeNextDueDate(params.rule, {
+  const next = computeNextDueDate(params.rule, {
     completedOn: params.latestCompletionDate,
     previousDueDate: params.latestCompletionDate,
   });
+  // A "Starting from" date in the future overrides history: nothing is due before it.
+  const start = fixedRuleStartDate(params.rule);
+  return start && isAfter(start, next) ? initialDueDate(params.rule, start) : next;
 }

@@ -1,4 +1,4 @@
-import type { CalendarDate } from "@/lib/dates";
+import { isAfter, type CalendarDate } from "@/lib/dates";
 import { addInterval } from "./completion-relative";
 import { nextFixedOccurrenceAfter, nextFixedOccurrenceOnOrAfter } from "./fixed-calendar";
 import type { RecurrenceRule } from "./types";
@@ -19,7 +19,20 @@ export { addInterval } from "./completion-relative";
  */
 export function initialDueDate(rule: RecurrenceRule, from: CalendarDate): CalendarDate {
   if (rule.type === "COMPLETION_RELATIVE") return from;
-  return nextFixedOccurrenceOnOrAfter(rule.pattern, from);
+  const start = fixedRuleStartDate(rule);
+  const effectiveFrom = start && isAfter(start, from) ? start : from;
+  return nextFixedOccurrenceOnOrAfter(rule.pattern, effectiveFrom);
+}
+
+/**
+ * The "Starting from" date of a fixed-calendar rule, if it has one (weekly and
+ * monthly patterns do; annual ones don't need one). Nothing is ever due before
+ * it, and for multi-week/month intervals it also fixes which week/month counts
+ * as an "on" one.
+ */
+export function fixedRuleStartDate(rule: RecurrenceRule): CalendarDate | null {
+  if (rule.type !== "FIXED_CALENDAR" || rule.pattern.pattern === "annual") return null;
+  return rule.pattern.anchorDate;
 }
 
 /**

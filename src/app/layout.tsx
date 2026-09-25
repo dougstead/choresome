@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { Nunito } from "next/font/google";
+import { NotificationPoller } from "@/components/notification-poller";
 import { OfflineBanner } from "@/components/offline-banner";
 import { RegisterServiceWorker } from "@/components/register-service-worker";
 import { UndoToastProvider } from "@/components/undo-toast-provider";
@@ -46,6 +47,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html lang="en" data-theme={theme} className={`${nunito.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-bg text-text">
         <RegisterServiceWorker />
+        <NotificationPoller />
         <OfflineBanner />
         <UndoToastProvider>{children}</UndoToastProvider>
       </body>

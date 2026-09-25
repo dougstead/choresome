@@ -4,6 +4,7 @@ import { DevicePreferenceCard } from "@/components/settings/device-preference-ca
 import { DisplaySettingsForm } from "@/components/settings/display-settings-form";
 import { HouseholdForm } from "@/components/settings/household-form";
 import { MembersManager } from "@/components/settings/members-manager";
+import { NotificationsCard } from "@/components/settings/notifications-card";
 
 export default function SettingsPage() {
   return (
@@ -13,6 +14,7 @@ export default function SettingsPage() {
       <HouseholdForm />
       <MembersManager />
       <AreasManager />
+      <NotificationsCard />
       <DisplaySettingsForm />
       <BackupCard />
       <p className="text-center text-xs text-text-muted">

@@ -448,6 +448,15 @@ The service worker is showing its offline fallback because the server isn't
 responding — check the mini PC is on and the container/process is running
 (`docker compose ps`).
 
+**A page looks broken or unstyled, or shows old data that won't go away.**
+Usually a stale service worker holding onto an old cached version of the app
+shell — most likely if this browser previously pointed at a different
+Choresome instance on the same address (e.g. a developer's local build, or
+after reinstalling on the same hostname/port). Reinstalling the PWA, or in a
+browser tab going to the site's settings → clear site data (or DevTools →
+Application → Service Workers → Unregister) and reloading, forces it to pick
+up the current version. This doesn't affect any server-side data.
+
 **Notifications aren't showing up.**
 They only fire while the app is open in a tab or as an installed PWA in the
 foreground (see [Known limitations](#known-limitations--future-extensibility))

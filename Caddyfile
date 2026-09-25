@@ -1,4 +1,7 @@
-# Choresome reverse proxy.
+# Choresome reverse proxy — for the native Windows production deployment
+# (see scripts/server/setup-server.ps1). Caddy and the app both run as
+# plain OS processes on the mini PC, so this talks to the app over
+# localhost, not a Docker network.
 #
 # http:// as the scheme tells Caddy to serve this plainly over HTTP and
 # never attempt automatic HTTPS/ACME for it — correct here, since
@@ -8,5 +11,5 @@
 # Change the hostname below if you pick a different one, and update the
 # router DNS entry (and the README) to match.
 http://chores.home.arpa {
-	reverse_proxy choresome:3000
+	reverse_proxy localhost:3010
 }

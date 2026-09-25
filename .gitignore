@@ -30,8 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files -- .env.example is a committed template, everything else is local/secret
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -41,6 +42,10 @@ yarn-error.log*
 /backups/
 *.db
 *.db-journal
+
+# local deployment configuration (machine-specific; see .deploy.local.json.example)
+/scripts/deploy.ps1
+/.deploy.local.json
 
 # typescript
 *.tsbuildinfo

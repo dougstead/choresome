@@ -86,7 +86,7 @@ export function DisplayApp({
   }
 
   return (
-    <div onPointerDown={wake} className="flex min-h-screen flex-col bg-bg px-8 py-6 text-text">
+    <div onPointerDown={wake} className="flex min-h-screen flex-col bg-bg px-4 py-6 text-text sm:px-8">
       <header className="mb-6 flex items-end justify-between">
         <div>
           <p className="text-lg font-semibold text-text-muted">{householdName}</p>
@@ -111,33 +111,38 @@ export function DisplayApp({
         </div>
       </header>
 
-      <div className="grid flex-1 grid-cols-2 gap-8 overflow-hidden">
-        <section className="flex flex-col overflow-y-auto pr-2">
+      <div className="grid flex-1 grid-cols-1 gap-8 md:grid-cols-2 md:overflow-hidden">
+        <section className="flex flex-col md:overflow-y-auto md:pr-2">
           <h2 className="mb-3 text-xl font-extrabold uppercase tracking-wide text-text-muted">To do</h2>
           {relevant.length === 0 ? (
             <p className="rounded-3xl border-2 border-dashed border-border p-8 text-center text-xl text-text-muted">
               All caught up! 🎉
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 min-[1400px]:grid-cols-2">
               {relevant.map(({ task, info }) => (
                 <button
                   key={task.id}
                   onClick={() => setMode({ kind: "picking", task })}
-                  className="flex items-center gap-3 rounded-3xl border-2 p-5 text-left shadow-sm transition active:scale-[0.98]"
+                  className="flex items-start gap-3 rounded-3xl border-2 p-4 text-left shadow-sm transition active:scale-[0.98]"
                   style={{
                     borderColor: info.status === "overdue" ? "var(--color-overdue)" : "var(--color-border)",
                     backgroundColor: "var(--color-surface)",
                   }}
                 >
-                  <span className="text-4xl">{task.icon}</span>
+                  <span className="shrink-0 text-4xl leading-none">{task.icon}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xl font-extrabold">{task.name}</span>
+                    <span className="block break-words text-xl font-extrabold leading-tight">{task.name}</span>
                     <span
-                      className="text-base font-bold"
+                      className="mt-1 block text-base font-bold"
                       style={{ color: info.status === "overdue" ? "var(--color-overdue)" : "var(--color-text-muted)" }}
                     >
                       {formatDueLabel(info)}
+                    </span>
+                    <span className="mt-0.5 block text-sm text-text-muted">
+                      {task.area.icon} {task.area.name}
+                      {task.recurrenceSummary ? ` · ${task.recurrenceSummary}` : ""}
+                      {task.estimatedDurationMinutes ? ` · ~${task.estimatedDurationMinutes} min` : ""}
                     </span>
                   </span>
                 </button>
@@ -146,7 +151,7 @@ export function DisplayApp({
           )}
         </section>
 
-        <section className="flex flex-col overflow-y-auto pl-2">
+        <section className="flex flex-col md:overflow-y-auto md:pl-2">
           <h2 className="mb-3 text-xl font-extrabold uppercase tracking-wide text-text-muted">Recently completed</h2>
           <div className="space-y-2">
             {(historyData?.events ?? []).length === 0 ? (
@@ -155,9 +160,11 @@ export function DisplayApp({
               historyData?.events.map((event) => (
                 <div key={event.id} className="flex items-center gap-3 rounded-2xl bg-surface-alt p-3.5">
                   <span className="text-2xl">{event.task.icon}</span>
-                  <span className="min-w-0 flex-1 text-lg">
-                    <span className="font-bold">{event.task.name}</span>
-                    <span className="text-text-muted"> — {event.member.name} — {formatRelativeTime(event.completedAt)}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-lg font-bold leading-tight">{event.task.name}</span>
+                    <span className="block text-sm text-text-muted">
+                      {event.member.name} · {formatRelativeTime(event.completedAt)}
+                    </span>
                   </span>
                 </div>
               ))

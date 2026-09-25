@@ -63,16 +63,16 @@ A single Next.js application serves both the API and the UI:
 
 ```
 Browser (phone / Pixel display)
-        │  HTTPS on the LAN
+        │  HTTP on the LAN (direct :3010, or via Caddy on :80 — see Deployment)
         ▼
-Next.js server (App Router)
-  ├─ React Server Components — page shells, initial data
-  ├─ Client Components + SWR — dashboard, forms, live updates
-  ├─ Route Handlers (/api/*) — Zod-validated REST endpoints
-  └─ Service layer (src/lib/services) — business logic, talks to Prisma
-        │
-        ▼
-  Prisma ORM → SQLite file (data/choresome.db)
+Caddy (native binary, optional) ──▶ Next.js server (App Router)
+                                      ├─ React Server Components — page shells, initial data
+                                      ├─ Client Components + SWR — dashboard, forms, live updates
+                                      ├─ Route Handlers (/api/*) — Zod-validated REST endpoints
+                                      └─ Service layer (src/lib/services) — business logic, talks to Prisma
+                                            │
+                                            ▼
+                                      Prisma ORM → SQLite file (data/choresome.db)
 ```
 
 There is no separate backend process, no message queue, and no external
@@ -159,11 +159,20 @@ src/
     short-token.ts           Shared random-token generator (NFC tag tokens)
   instrumentation.ts       Starts the automatic backup schedule on server boot
 scripts/
-  run-backup.ts           Standalone backup trigger (for Task Scheduler, if preferred)
+  run-backup.ts           Standalone backup trigger (alternative to the automatic schedule)
+  server/                 Native Windows production deployment (see below)
+    setup-server.ps1        One-time: fetches Caddy, opens firewall ports, registers Task Scheduler entries
+    deploy.ps1               Pull + install + migrate + build + restart, with a health check
+    start-choresome.cmd      What the "Choresome" scheduled task actually runs
+    start-caddy.cmd          What the "Choresome Caddy" scheduled task actually runs
+  deploy.ps1               (gitignored) Local trigger: SSHes to the mini PC and runs server/deploy.ps1
 public/
   manifest.webmanifest, icons, sw.js, offline.html
 data/                    SQLite database lives here (gitignored, created at runtime)
 backups/                 Automatic timestamped backups land here (gitignored)
+Caddyfile                Native production reverse proxy config (see Windows mini-PC deployment)
+Dockerfile, docker-compose.yml
+                         Dev/testing convenience only — not used in production (see below)
 ```
 
 ## Local development
@@ -190,6 +199,20 @@ npx prisma db seed
 The seed script refuses to run if a household has already completed setup,
 so it can never clobber real data — and `SEED_DEMO_DATA` defaults to
 `"false"`, so it's inert in any deployment that doesn't explicitly opt in.
+
+### Docker Compose (optional, for testing a production-like build)
+
+Production deployment doesn't use Docker (see [Windows mini-PC
+deployment](#windows-mini-pc-deployment-step-by-step)) — but `docker-compose.yml`
+is still here if you want to sanity-check a production build locally
+without installing anything beyond Docker Desktop:
+
+```bash
+docker compose up -d --build
+```
+
+Serves the app at `http://localhost:3010`, with `./data` and `./backups`
+bind-mounted next to `docker-compose.yml`.
 
 ## Testing
 
@@ -223,103 +246,77 @@ npx prisma migrate dev --name describe_the_change
 ```
 
 This creates a new folder under `prisma/migrations/` and applies it to your
-dev database. In production, `docker-entrypoint.sh` runs
-`npx prisma migrate deploy` automatically on every container start, which
-only applies migrations that haven't run yet — safe to run repeatedly.
+dev database. In production, `scripts/server/deploy.ps1` runs
+`npx prisma migrate deploy` on every deploy (and Docker's
+`docker-entrypoint.sh` does the same for the dev-convenience container path)
+— which only applies migrations that haven't run yet, so it's safe to run
+repeatedly.
 
 ## Production deployment
 
-### Option A: Docker Compose (recommended)
+**Production runs natively on Windows — no Docker.** Docker Desktop's
+WSL2 backend reserves a meaningful chunk of RAM just by being open, before
+running a single container; on a small mini PC that's not an acceptable
+baseline cost just to host one small app. Native Node.js plus a native
+Caddy binary, both managed by Task Scheduler, gets the same result — an
+always-on app with a friendly URL that survives reboots — for roughly
+150–200MB combined, with nothing running in the background when the app
+itself is idle beyond that.
 
-```bash
-docker compose up -d --build
-```
-
-This builds the image, creates `./data` and `./backups` folders next to
-`docker-compose.yml` (mounted into the container so your data survives
-container rebuilds/updates), runs migrations, and starts:
-
-- **choresome** — the app itself, fixed to host port **3010** (not the
-  container's default 3000 — pinned explicitly since a mini PC hosting more
-  than one thing shouldn't leave any of them on "whatever the framework
-  defaults to"). Reachable directly at `http://<mini-pc-address>:3010`.
-- **caddy** — a reverse proxy on port 80 giving the app a friendly hostname
-  with no port in the URL. See [Friendly hostname with
-  Caddy](#5b-friendly-hostname-with-caddy) below to configure the hostname.
-
-To update after pulling new code:
-
-```bash
-docker compose up -d --build
-```
-
-Migrations run automatically on startup; your data in `./data` is untouched.
-
-**Using a different port**: edit the `choresome` service's `ports` line in
-`docker-compose.yml` — only the left side changes, since that's the host
-port:
-
-```yaml
-ports:
-  - "8080:3000"   # visit http://<mini-pc-address>:8080 instead of :3010
-```
-
-Then `docker compose up -d --build` again. The container's internal port
-(3000) doesn't need to change, and neither does Caddy's config (it talks to
-the `choresome` container over the internal Docker network, not through the
-published host port).
-
-### Option B: Plain Node.js (no Docker)
-
-```bash
-npm ci
-cp .env.example .env      # edit DATABASE_URL if you want the DB somewhere specific
-npx prisma migrate deploy
-npm run build
-npm start                 # serves on port 3000
-```
-
-For a different port with this path: `npm start -- -p 8080`, or set `PORT=8080` in the environment before `npm start`.
+Docker Compose is still in this repo (`docker-compose.yml`) as a
+**development/testing convenience** — see [Local development](#local-development)
+— but it's optional and never required to run Choresome for real.
 
 ## Windows mini-PC deployment (step by step)
 
 This assumes a Windows mini PC that stays on and connected to your home
-Wi-Fi/Ethernet, and that you have (or will install) Docker Desktop **or**
-Node.js. Docker is recommended — it's one less thing to configure by hand.
+Wi-Fi/Ethernet, with [Node.js 20 LTS or newer](https://nodejs.org) and
+[Git](https://git-scm.com/) installed. Nothing else — no Docker Desktop, no
+IIS, no Windows Service wrapper.
 
-### 1. Install prerequisites
-
-- **Docker Desktop for Windows** (uses WSL2): <https://www.docker.com/products/docker-desktop/>
-  — during install, accept the WSL2 backend if prompted.
-- *(Node.js path only)* **Node.js 20 LTS or newer**: <https://nodejs.org>
-
-### 2. Get the code onto the PC
-
-Copy the project folder to the mini PC (USB drive, network share, or
-`git clone` if Git is installed), e.g. to `C:\Choresome`.
-
-### 3. Configure
+### 1. Get the code onto the PC
 
 ```powershell
-cd C:\Choresome
+cd C:\Apps
+git clone https://github.com/<your-fork>/choresome.git
+```
+
+(or copy the project folder over some other way, e.g. a USB drive — `C:\Apps\choresome`
+is just this repo's own convention; any path works as long as every command
+and script below is run from wherever you actually put it.)
+
+### 2. One-time setup
+
+```powershell
+cd C:\Apps\choresome
+npm ci
 copy .env.example .env
+npx prisma migrate deploy
+npm run build
+.\scripts\server\setup-server.ps1
 ```
 
-Leave `DATABASE_URL` as-is for Docker (it's overridden by
-`docker-compose.yml`). For the plain-Node path, the default relative path is
-fine too.
+`setup-server.ps1`:
 
-### 4. Start it
+- Downloads a native `caddy.exe` (a single ~40MB binary, no installer) into
+  the project folder, if it's not already there.
+- Opens Windows Firewall for ports **3010** (the app) and **80** (Caddy).
+- Registers two Task Scheduler entries — **Choresome** and **Choresome
+  Caddy** — both triggered "At startup", both set to restart automatically
+  if they crash. This is the same mechanism you'd use for any other
+  always-on script on this machine; no Windows Service, no NSSM.
+
+Then start both for the first time:
 
 ```powershell
-docker compose up -d --build
+Start-ScheduledTask -TaskName "Choresome"
+Start-ScheduledTask -TaskName "Choresome Caddy"
 ```
 
-Check it's running: `docker compose ps`, and open
-`http://localhost:3010` in a browser **on the mini PC** to confirm before
-moving to other devices.
+Check it's running: open `http://localhost:3010` in a browser **on the
+mini PC** to confirm before moving to other devices.
 
-### 5. Find the mini PC's LAN address
+### 3. Find the mini PC's LAN address
 
 ```powershell
 ipconfig
@@ -331,15 +328,14 @@ Other devices on the same Wi-Fi/network reach the app at
 in your router) is worth doing so this address doesn't change later — and
 is what the Caddy hostname below points at, so it needs to stay put.
 
-### 5b. Friendly hostname with Caddy
+### 3b. Friendly hostname with Caddy
 
 Typing an IP address (and a port) every time is easy to forget. The
-`docker-compose.yml` in this repo already includes
-[Caddy](https://caddyserver.com/) as a reverse proxy, configured (via the
-`Caddyfile` at the repo root) to serve the app at `chores.home.arpa` — a
-name under the [`.home.arpa`](https://datatracker.ietf.org/doc/html/rfc8375)
-special-use domain reserved specifically for home networks, so it'll never
-clash with a real internet domain. Two things make that name actually work:
+`Caddyfile` at the repo root is already configured to serve the app at
+`chores.home.arpa` — a name under the
+[`.home.arpa`](https://datatracker.ietf.org/doc/html/rfc8375) special-use
+domain reserved specifically for home networks, so it'll never clash with a
+real internet domain. Two things make that name actually work:
 
 **1. Point the hostname at the mini PC, in your router.** Look for a
 section your router firmware calls "Local DNS", "DNS Rewrites", "Static
@@ -348,30 +344,28 @@ some ASUS/Netgear/Ubiquiti models) and add an entry:
 
 | Hostname | Points to |
 |---|---|
-| `chores.home.arpa` | *(the mini PC's LAN IP — see step 5)* |
+| `chores.home.arpa` | *(the mini PC's LAN IP — see step 3)* |
 
 If your router has no such feature, `chores.home.arpa` won't resolve for
-anyone and you're back to using the plain IP with port 3010 — see the
-fallback note at the end of this section.
+anyone and you're back to using the plain IP with port 3010 instead.
 
-**2. Use a different hostname instead**, if you'd rather — just change it
-in two places and redeploy:
+**2. Use a different hostname instead**, if you'd rather — just edit the
+`Caddyfile`:
 
 ```
-# Caddyfile
 http://your-name.home.arpa {
-	reverse_proxy choresome:3000
+	reverse_proxy localhost:3010
 }
 ```
 
-then `docker compose up -d --build` again, and point the router's DNS entry
-at the new name instead.
+then restart the Caddy task (`Restart-ScheduledTask -TaskName "Choresome Caddy"`,
+or stop/start it), and point the router's DNS entry at the new name instead.
 
 Once both are in place, everyone on the network can use
 `http://chores.home.arpa` — no port, nothing to remember beyond the one
 name. It can take a minute for devices to pick up a new DNS entry, or a
 Wi-Fi reconnect/reboot on stubborn ones. The direct `http://<mini-pc-ip>:3010`
-address (see step 5) keeps working exactly the same either way — Caddy is
+address (see step 3) keeps working exactly the same either way — Caddy is
 an addition, not a replacement.
 
 This is plain HTTP, not HTTPS — `chores.home.arpa` isn't a publicly
@@ -381,35 +375,55 @@ certificate from Caddy's own internal CA, but that means installing
 Caddy's root certificate on every phone/device yourself, which is a
 meaningfully bigger step this setup doesn't take unasked.
 
-### 6. Start automatically after a reboot
+### 4. Start automatically after a reboot
 
-**With Docker Desktop:** Docker Desktop has a setting to start on login
-(Settings → General → "Start Docker Desktop when you sign in"), and any
-container started with `restart: unless-stopped` (already set in
-`docker-compose.yml`) restarts automatically once the daemon is back up. For
-this to work unattended, also set the mini PC's Windows account to sign in
-automatically after a power cut/reboot (Windows sign-in options, or
-`netplwiz` to configure auto-login), since Docker Desktop needs a signed-in
-session to start.
+Already done by `setup-server.ps1` — both Task Scheduler entries trigger
+"At startup" (not tied to any particular user signing in). For them to
+actually run unattended after a power cut, the mini PC itself needs to boot
+without waiting at a lock screen: Windows sign-in options → set the account
+to not require a password on this trusted device, or use `netplwiz` to
+enable automatic sign-in. (Task Scheduler tasks configured this way still
+start at boot even without auto-login, as long as "Run whether user is
+logged on or not" isn't required — the setup script doesn't set that flag,
+since it would mean storing the account's password. If you'd rather not
+touch auto-login at all, that flag plus a stored credential is the
+alternative: edit the tasks in Task Scheduler's UI, tick "Run whether user
+is logged on or not", and supply the account password when prompted.)
 
-**Without Docker (Task Scheduler):** create a Scheduled Task that runs at
-system startup:
+### 5. Updating later
 
-- Trigger: "At startup"
-- Action: `npm.cmd` with arguments `start`, start-in folder `C:\Choresome`
-- Under Settings, enable "Run whether user is logged on or not" and "Run
-  with highest privileges".
-
-### 7. Updating later
-
-Pull or copy in the new code, then:
+From your own machine, with the `scripts/deploy.ps1` /
+`.deploy.local.json` pattern set up (copy `.deploy.local.json.example`,
+fill in your mini PC's username/IP, keep both untracked — see the files
+for the exact shape):
 
 ```powershell
-docker compose up -d --build
+.\scripts\deploy.ps1
 ```
 
-(or `npm ci && npm run build` then restart the app, for the Node path).
-Your database and backups are untouched either way.
+This SSHs in and runs `scripts/server/deploy.ps1` on the mini PC, which
+pulls the latest code, reinstalls dependencies, regenerates the Prisma
+client, applies any new migrations, rebuilds, restarts both tasks, and
+verifies the app actually answers on port 3010 before declaring success —
+failing loudly (and leaving the previous build's `node_modules`/`.next`
+alone) rather than silently deploying something broken. Your database and
+backups are untouched either way.
+
+Prefer to do it by hand at the machine instead? The same steps, run
+directly there:
+
+```powershell
+cd C:\Apps\choresome
+git pull --ff-only
+npm ci
+npx prisma generate
+npx prisma migrate deploy
+npm run build
+Stop-ScheduledTask -TaskName "Choresome"
+Stop-ScheduledTask -TaskName "Choresome Caddy"
+Start-ScheduledTask -TaskName "Choresome"
+Start-ScheduledTask -TaskName "Choresome Caddy"
+```
 
 ## Backups
 
@@ -420,13 +434,13 @@ This matters most here — completion history is meant to last years.
   checks whether it's been at least `backupIntervalHours` (Settings →
   Backup, default 24) since the last backup file, and if so writes a new
   timestamped snapshot to the configured backup directory (default
-  `./backups`, or `/app/backups` in the container — already mounted to the
-  host by `docker-compose.yml`) and prunes down to `backupRetention` most
+  `./backups` next to wherever the app is running — `C:\Apps\choresome\backups`
+  for the native deployment, or `/app/backups` in the container for the
+  dev-convenience Docker path) and prunes down to `backupRetention` most
   recent files (default 14). These use SQLite's `VACUUM INTO`, which is
   transactionally consistent even while the app is being used — not a raw
   file copy, which could capture a half-written page.
-- **Manual trigger**: `npm run backup:run` (or
-  `npx tsx scripts/run-backup.ts` inside the container) runs the same logic
+- **Manual trigger**: `npm run backup:run` runs the same logic
   on demand — useful if you'd rather drive timing from Windows Task
   Scheduler than rely on the in-app schedule.
 - **JSON export/import**: Settings → Backup & Restore → "Export JSON"
@@ -445,7 +459,7 @@ This matters most here — completion history is meant to last years.
 ## Installing the PWA on Android
 
 1. Open `http://chores.home.arpa` in Chrome on the phone (once the Caddy
-   hostname is set up — see [5b](#5b-friendly-hostname-with-caddy) — or
+   hostname is set up — see [3b](#3b-friendly-hostname-with-caddy) — or
    `http://<mini-pc-address>:3010` otherwise). Prefer the hostname if it's
    available: installing an app and each device's "who am I" preference are
    both tied to the exact URL used, so switching between the IP and the
@@ -575,24 +589,33 @@ reshaping the app — see [Known limitations](#known-limitations--future-extensi
 ## Troubleshooting
 
 **Can't reach it from my phone, but it works on the mini PC itself.**
-Check Windows Firewall isn't blocking inbound connections on ports 3010 and
-80 (Docker Desktop usually configures this automatically the first time it
-asks for network permission; for the Node-only path you may need to allow
-`node.exe` / the port explicitly in Windows Defender Firewall → Advanced
-settings → Inbound Rules). Also confirm the phone is on the same Wi-Fi
+`setup-server.ps1` opens Windows Firewall for ports 3010 and 80
+automatically — check those two rules exist (Windows Defender Firewall →
+Advanced settings → Inbound Rules → search "Choresome") and re-run
+`setup-server.ps1` if not. Also confirm the phone is on the same Wi-Fi
 network as the mini PC (not, e.g., a guest network that isolates devices
 from each other).
 
+**The app or Caddy isn't running / doesn't come back after a crash.**
+Check Task Scheduler (`taskschd.msc`) for the "Choresome" and "Choresome
+Caddy" tasks — both should show "Running" or a recent successful "Last Run
+Result". Start one by hand with `Start-ScheduledTask -TaskName "Choresome"`
+(or `"Choresome Caddy"`) and check its "Last Run Result" if it doesn't come
+up; both are configured to restart automatically on failure, so something
+stopping repeatedly is worth investigating directly (run
+`scripts\server\deploy.ps1` again for a clean rebuild) rather than just
+restarting it again.
+
 **`chores.home.arpa` doesn't resolve / times out, but the IP:port works.**
 The router-side DNS entry either isn't set up yet or hasn't propagated —
-see [5b](#5b-friendly-hostname-with-caddy). Use `http://<mini-pc-ip>:3010`
+see [3b](#3b-friendly-hostname-with-caddy). Use `http://<mini-pc-ip>:3010`
 in the meantime; nslookup/ping the hostname from another device to check
 whether it's resolving at all.
 
 **The site shows "Can't reach Choresome" (offline page).**
 The service worker is showing its offline fallback because the server isn't
-responding — check the mini PC is on and the container/process is running
-(`docker compose ps`).
+responding — check the mini PC is on and the "Choresome" scheduled task is
+running (see above).
 
 **A page looks broken or unstyled, or shows old data that won't go away.**
 Usually a stale service worker holding onto an old cached version of the app

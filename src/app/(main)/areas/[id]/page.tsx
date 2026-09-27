@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeftIcon } from "@/components/icons";
 import { AreaTaskList } from "@/components/area-task-list";
-import { calendarDateToIsoDate, instantToCalendarDate } from "@/lib/dates";
+import { householdTodayIso } from "@/lib/household-clock";
 import { listAreas } from "@/lib/services/area-service";
 import { getHouseholdSettings } from "@/lib/services/settings-service";
 
@@ -12,7 +12,7 @@ export default async function AreaDetailPage({ params }: { params: Promise<{ id:
   const area = areas.find((a) => a.id === id);
   if (!area) notFound();
 
-  const todayIso = calendarDateToIsoDate(instantToCalendarDate(new Date(), settings.timezone));
+  const todayIso = householdTodayIso(settings);
 
   return (
     <div className="space-y-5">

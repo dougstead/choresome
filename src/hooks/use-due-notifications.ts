@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import useSWR from "swr";
 import { computeDueNotifications, type NotifiableTask } from "@/lib/notifications/compute-due-notifications";
 import { createBrowserNotificationChannel } from "@/lib/notifications/channels/browser-channel";
-import { instantToCalendarDate } from "@/lib/dates";
+import { householdToday } from "@/lib/household-clock";
 import { fetcher } from "@/lib/client/fetcher";
 import { DEFAULT_REMINDER_CONFIG } from "@/lib/validation/recurrence";
 import type { TaskDto } from "@/lib/api/types";
@@ -51,7 +51,15 @@ export function useDueNotifications(settings: HouseholdSettings | undefined) {
     const channel = createBrowserNotificationChannel();
     if (!channel.isAvailable()) return;
 
-    const today = instantToCalendarDate(new Date(), settings.timezone);
+    // Reminders should stay quiet during Holiday mode too -- nothing should
+    // newly ping as due/overdue while the household's away, same as the
+    // in-app due-status badges. `holidayStartedAt` arrives over JSON as a
+    // string despite HouseholdSettings' Date type, hence the re-wrap.
+    const today = householdToday({
+      timezone: settings.timezone,
+      holidayMode: settings.holidayMode,
+      holidayStartedAt: settings.holidayStartedAt ? new Date(settings.holidayStartedAt) : null,
+    });
     const notifiable: NotifiableTask[] = data.tasks
       .filter((t) => t.active)
       .map((t) => ({

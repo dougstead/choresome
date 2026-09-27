@@ -5,7 +5,7 @@ import useSWR, { mutate as globalMutate } from "swr";
 import { DisplayClock } from "./display-clock";
 import { Screensaver } from "./screensaver";
 import { CheckIcon } from "@/components/icons";
-import { useMembers, useTasks } from "@/hooks/use-household-data";
+import { useMembers, useSettings, useTasks } from "@/hooks/use-household-data";
 import { getTaskStatus, type TaskStatus } from "@/lib/task-status";
 import { formatDueLabel, formatRelativeTime } from "@/lib/format";
 import { fetcher, postJson } from "@/lib/client/fetcher";
@@ -29,6 +29,7 @@ export function DisplayApp({
   householdName,
   timeFormat,
   displayConfig,
+  holidayMode: initialHolidayMode,
 }: {
   todayIso: string;
   timezone: string;
@@ -36,6 +37,7 @@ export function DisplayApp({
   householdName: string;
   timeFormat: string;
   displayConfig: DisplayConfig;
+  holidayMode: boolean;
 }) {
   const { tasks } = useTasks({ refreshInterval: 30_000 });
   const { members } = useMembers();
@@ -44,6 +46,10 @@ export function DisplayApp({
     fetcher,
     { refreshInterval: 30_000 }
   );
+  // Polled (not just the initial SSR prop) so a Holiday-mode toggle made from
+  // someone's phone shows up here too, without this kiosk ever being reloaded.
+  const { settings: liveSettings } = useSettings({ refreshInterval: 30_000 });
+  const holidayMode = liveSettings ? liveSettings.holidayMode : initialHolidayMode;
 
   const [mode, setMode] = useState<Mode>({ kind: "dashboard" });
   const [idle, setIdle] = useState(false);
@@ -61,11 +67,16 @@ export function DisplayApp({
 
   useEffect(() => {
     const id = setInterval(() => {
-      setTodayIso(calendarDateToIsoDate(instantToCalendarDate(new Date(), timezone)));
+      // While Holiday mode is on, `todayIso` stays pinned to whatever the
+      // server sent (the day it started) -- only the relative-time strings
+      // ("2 hours ago") keep moving, via forceTick below.
+      if (!holidayMode) {
+        setTodayIso(calendarDateToIsoDate(instantToCalendarDate(new Date(), timezone)));
+      }
       forceTick((t) => t + 1);
     }, 30_000);
     return () => clearInterval(id);
-  }, [timezone]);
+  }, [timezone, holidayMode]);
 
   const wake = useCallback(() => {
     lastInteraction.current = Date.now();
@@ -138,6 +149,14 @@ export function DisplayApp({
           </h1>
         </div>
         <div className="flex items-center gap-4">
+          {holidayMode ? (
+            <span
+              className="rounded-full px-3 py-1.5 text-sm font-bold"
+              style={{ backgroundColor: "var(--color-primary-soft)", color: "var(--color-primary)" }}
+            >
+              🏖️ Holiday mode
+            </span>
+          ) : null}
           <span className="text-2xl font-bold text-text-muted">
             <DisplayClock timeFormat={timeFormat} />
           </span>

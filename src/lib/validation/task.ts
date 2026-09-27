@@ -34,5 +34,11 @@ export const updateTaskSchema = z.object({
   active: z.boolean().optional(),
 });
 
+export const snoozeTaskSchema = z.object({
+  /** Days to push the due date forward by, from today (not from the current due date). */
+  days: z.number().int().min(1).max(365).default(1),
+});
+
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
+export type SnoozeTaskInput = z.infer<typeof snoozeTaskSchema>;

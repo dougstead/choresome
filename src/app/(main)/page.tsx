@@ -1,12 +1,17 @@
 import { Dashboard } from "@/components/dashboard";
-import { instantToCalendarDate, calendarDateToIsoDate } from "@/lib/dates";
+import { householdTodayIso } from "@/lib/household-clock";
 import { getHouseholdSettings } from "@/lib/services/settings-service";
 
 export default async function DashboardPage() {
   const settings = await getHouseholdSettings();
-  const todayIso = calendarDateToIsoDate(instantToCalendarDate(new Date(), settings.timezone));
+  const todayIso = householdTodayIso(settings);
 
   return (
-    <Dashboard todayIso={todayIso} upcomingWindowDays={settings.upcomingWindowDays} householdName={settings.name} />
+    <Dashboard
+      todayIso={todayIso}
+      upcomingWindowDays={settings.upcomingWindowDays}
+      householdName={settings.name}
+      holidayMode={settings.holidayMode}
+    />
   );
 }

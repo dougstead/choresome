@@ -32,7 +32,9 @@ export function useTasks(options: { areaId?: string; includeArchived?: boolean; 
   return { tasks: data?.tasks ?? [], error, isLoading };
 }
 
-export function useSettings() {
-  const { data, error, isLoading } = useSWR<{ settings: HouseholdSettings }>("/api/settings", fetcher);
+export function useSettings(options: { refreshInterval?: number } = {}) {
+  const { data, error, isLoading } = useSWR<{ settings: HouseholdSettings }>("/api/settings", fetcher, {
+    refreshInterval: options.refreshInterval,
+  });
   return { settings: data?.settings, error, isLoading };
 }

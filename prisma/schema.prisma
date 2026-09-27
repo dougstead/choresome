@@ -52,6 +52,13 @@ model Household {
 
   displayConfig String @default("{\"idleTimeoutSeconds\":90,\"sharedMode\":true,\"screensaverBrightness\":0.4}")
 
+  /// While true, every due-date calculation is pinned to `holidayStartedAt`
+  /// instead of the real date, so nothing creeps further overdue while the
+  /// household is away. Turning it off is what shifts schedules forward
+  /// again -- see holiday-service.ts.
+  holidayMode      Boolean   @default(false)
+  holidayStartedAt DateTime?
+
   setupCompleted Boolean @default(false)
 
   createdAt DateTime @default(now())

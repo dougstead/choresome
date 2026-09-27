@@ -1,12 +1,15 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
+  addDays,
   calendarDateToUtcDate,
   instantToCalendarDate,
   utcDateToCalendarDate,
   type CalendarDate,
 } from "@/lib/dates";
+import { computeNextDueDate } from "@/lib/recurrence";
 import { parseRecurrenceRule, serializeRecurrenceRule } from "@/lib/recurrence/serialize";
+import { householdToday } from "@/lib/household-clock";
 import { getHouseholdSettings } from "./settings-service";
 import { dueDateForNewOrEditedRule } from "./scheduling";
 import type { CreateTaskInput, UpdateTaskInput } from "@/lib/validation/task";
@@ -31,7 +34,7 @@ export async function getTaskById(id: string) {
 
 export async function createTask(input: CreateTaskInput) {
   const settings = await getHouseholdSettings();
-  const today = instantToCalendarDate(new Date(), settings.timezone);
+  const today = householdToday(settings);
   const startFrom: CalendarDate = input.startDate ?? today;
   const dueDate = dueDateForNewOrEditedRule({
     rule: input.recurrenceRule,
@@ -67,7 +70,7 @@ export async function updateTask(id: string, input: UpdateTaskInput) {
 
   if (input.recurrenceRule) {
     const settings = await getHouseholdSettings();
-    const today = instantToCalendarDate(new Date(), settings.timezone);
+    const today = householdToday(settings);
     const latest = await prisma.completionEvent.findFirst({
       where: { taskId: id },
       orderBy: { completedAt: "desc" },
@@ -108,6 +111,43 @@ export async function archiveTask(id: string) {
 
 export async function unarchiveTask(id: string) {
   return prisma.task.update({ where: { id }, data: { active: true, archivedAt: null } });
+}
+
+/**
+ * Advances a task's due date exactly as if it had just been completed --
+ * without recording a CompletionEvent, so nobody's credited and history
+ * stays honest. "Reset the timer" for a chore nobody actually did.
+ */
+export async function skipTask(id: string) {
+  const task = await prisma.task.findUniqueOrThrow({ where: { id } });
+  const settings = await getHouseholdSettings();
+  const rule = parseRecurrenceRule(task.recurrenceConfig);
+  const today = householdToday(settings);
+  const previousDueDate = utcDateToCalendarDate(task.dueDate);
+  const nextDue = computeNextDueDate(rule, { completedOn: today, previousDueDate });
+
+  return prisma.task.update({
+    where: { id },
+    data: { dueDate: calendarDateToUtcDate(nextDue) },
+    include: { area: true, defaultAssignee: true },
+  });
+}
+
+/**
+ * Pushes a task's due date `days` forward from today (not from its current
+ * due date -- snoozing an overdue task means "remind me again in N days",
+ * not "N days after it was already due"). A temporary postponement, unlike
+ * `skipTask`: it ignores the recurrence rule entirely.
+ */
+export async function snoozeTask(id: string, days: number) {
+  const settings = await getHouseholdSettings();
+  const newDueDate = addDays(householdToday(settings), days);
+
+  return prisma.task.update({
+    where: { id },
+    data: { dueDate: calendarDateToUtcDate(newDueDate) },
+    include: { area: true, defaultAssignee: true },
+  });
 }
 
 export function taskRecurrenceRule(task: { recurrenceConfig: string }) {

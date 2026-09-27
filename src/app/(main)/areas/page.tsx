@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AddAreaButton } from "@/components/add-area-button";
-import { calendarDateToIsoDate, instantToCalendarDate } from "@/lib/dates";
+import { householdTodayIso } from "@/lib/household-clock";
 import { getTaskStatus } from "@/lib/task-status";
 import { listAreas } from "@/lib/services/area-service";
 import { listTasks } from "@/lib/services/task-service";
@@ -9,7 +9,7 @@ import { serializeTask } from "@/lib/api/serialize-task";
 
 export default async function AreasPage() {
   const [areas, tasks, settings] = await Promise.all([listAreas(), listTasks(), getHouseholdSettings()]);
-  const todayIso = calendarDateToIsoDate(instantToCalendarDate(new Date(), settings.timezone));
+  const todayIso = householdTodayIso(settings);
 
   const tasksByArea = new Map<string, ReturnType<typeof serializeTask>[]>();
   for (const task of tasks) {

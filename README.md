@@ -44,6 +44,9 @@ overwritten.
 - Surfaces what's overdue, due today, and coming up — without turning
   household chores into a competition (no points, no streaks).
 - Works entirely on your home network, with no cloud dependency.
+- Copes with real life: **Holiday mode** pauses every due date while
+  you're away, and individual tasks can be **skipped** or **snoozed**
+  without lying in the history (see below).
 
 ### The two recurrence models
 
@@ -76,6 +79,26 @@ entry ("Joint effort") and counts towards every active member in the stats.
 Behind the scenes it's recorded against a hidden system member, so it never
 appears in the member list. NFC taps still complete as the device's
 remembered member (use Undo to correct one).
+
+### Holiday mode, Skip and Snooze
+
+- **Holiday mode** (Settings → Holiday mode) is a household-wide pause
+  button. While it's on, nothing's due-date status can get any more
+  overdue — every page (including the wall display) freezes "today" at the
+  moment you turned it on. Turning it back off shifts every active task's
+  due date forward by exactly how many days you were away, so a task that
+  was already 2 days overdue when you left is still exactly 2 days overdue
+  when you get back, and one that wasn't due yet still isn't. A banner on
+  the dashboard (and a small pill on the wall display) reminds you it's on,
+  with a one-tap "We're back" to end it.
+- **Skip** (on a task's detail page) advances its due date exactly as if
+  it had just been completed, using the same recurrence rule — but records
+  no completion, so nobody's credited and the history stays honest. Use it
+  for "that one didn't happen this time round".
+- **Snooze** pushes a task's due date forward by a number of days you
+  choose (default 1), counted from today regardless of how overdue it
+  currently is — "remind me again in N days", not "N days after it was
+  already due".
 
 ## Architecture
 

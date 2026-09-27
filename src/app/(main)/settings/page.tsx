@@ -2,6 +2,7 @@ import { AreasManager } from "@/components/settings/areas-manager";
 import { BackupCard } from "@/components/settings/backup-card";
 import { DevicePreferenceCard } from "@/components/settings/device-preference-card";
 import { DisplaySettingsForm } from "@/components/settings/display-settings-form";
+import { HolidayModeCard } from "@/components/settings/holiday-mode-card";
 import { HouseholdForm } from "@/components/settings/household-form";
 import { MembersManager } from "@/components/settings/members-manager";
 import { NfcTagsManager } from "@/components/settings/nfc-tags-manager";
@@ -13,6 +14,7 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-extrabold">Settings</h1>
       <DevicePreferenceCard />
       <HouseholdForm />
+      <HolidayModeCard />
       <MembersManager />
       <AreasManager />
       <NfcTagsManager />

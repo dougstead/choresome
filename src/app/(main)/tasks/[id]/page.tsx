@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { TaskDetail } from "@/components/task-detail";
 import { serializeTask } from "@/lib/api/serialize-task";
-import { calendarDateToIsoDate, instantToCalendarDate } from "@/lib/dates";
+import { householdTodayIso } from "@/lib/household-clock";
 import { getTaskById } from "@/lib/services/task-service";
 import { getHouseholdSettings } from "@/lib/services/settings-service";
 
@@ -10,7 +10,7 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
   const [task, settings] = await Promise.all([getTaskById(id), getHouseholdSettings()]);
   if (!task) notFound();
 
-  const todayIso = calendarDateToIsoDate(instantToCalendarDate(new Date(), settings.timezone));
+  const todayIso = householdTodayIso(settings);
 
   return (
     <TaskDetail

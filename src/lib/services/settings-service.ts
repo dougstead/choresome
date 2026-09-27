@@ -17,6 +17,8 @@ export interface HouseholdSettings {
   backupRetention: number;
   backupIntervalHours: number;
   displayConfig: DisplayConfig;
+  holidayMode: boolean;
+  holidayStartedAt: Date | null;
   setupCompleted: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -35,6 +37,8 @@ function parseHousehold(row: {
   backupRetention: number;
   backupIntervalHours: number;
   displayConfig: string;
+  holidayMode: boolean;
+  holidayStartedAt: Date | null;
   setupCompleted: boolean;
   createdAt: Date;
   updatedAt: Date;

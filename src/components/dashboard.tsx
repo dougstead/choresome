@@ -7,7 +7,8 @@ import { TaskRow } from "./task-row";
 import { MemberPickerSheet } from "./member-picker-sheet";
 import { PlusIcon, UndoIcon } from "./icons";
 import { useCompleteTask } from "@/hooks/use-complete-task";
-import { useMembers, useTasks } from "@/hooks/use-household-data";
+import { useMembers, useSettings, useTasks } from "@/hooks/use-household-data";
+import { useHolidayMode } from "@/hooks/use-holiday-mode";
 import { useUndoToast } from "./undo-toast-provider";
 import { getTaskStatus } from "@/lib/task-status";
 import { formatRelativeTime } from "@/lib/format";
@@ -29,10 +30,12 @@ export function Dashboard({
   todayIso,
   upcomingWindowDays,
   householdName,
+  holidayMode: initialHolidayMode,
 }: {
   todayIso: string;
   upcomingWindowDays: number;
   householdName: string;
+  holidayMode: boolean;
 }) {
   const { tasks, isLoading } = useTasks();
   const { members } = useMembers();
@@ -40,6 +43,11 @@ export function Dashboard({
   const { requestComplete, completeWithMember, pendingTask, cancelPending, busyTaskId } = useCompleteTask();
   const { show } = useUndoToast();
   const [undoingId, setUndoingId] = useState<string | null>(null);
+  // Polled so a toggle made elsewhere (Settings, another device) shows up
+  // here without a manual reload, falling back to the SSR value until then.
+  const { settings } = useSettings({ refreshInterval: 30_000 });
+  const holidayMode = settings ? settings.holidayMode : initialHolidayMode;
+  const { setHolidayMode, busy: holidayBusy } = useHolidayMode();
 
   async function handleUndo(event: CompletionEventWithTaskDto) {
     setUndoingId(event.id);
@@ -65,6 +73,25 @@ export function Dashboard({
           {greeting(new Date().getHours())}
         </h1>
       </header>
+
+      {holidayMode ? (
+        <div
+          className="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border-2 p-3.5"
+          style={{ borderColor: "var(--color-primary)", backgroundColor: "var(--color-primary-soft)" }}
+        >
+          <span className="text-sm font-bold" style={{ color: "var(--color-primary)" }}>
+            🏖️ Holiday mode is on — due dates are paused.
+          </span>
+          <button
+            onClick={() => setHolidayMode(false)}
+            disabled={holidayBusy}
+            className="shrink-0 rounded-full px-3 py-1.5 text-xs font-extrabold disabled:opacity-60"
+            style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}
+          >
+            {holidayBusy ? "…" : "We're back"}
+          </button>
+        </div>
+      ) : null}
 
       {!isLoading && tasks.length === 0 ? (
         <EmptyDashboard />

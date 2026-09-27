@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { ArrowLeftIcon, CheckIcon, EditIcon } from "./icons";
@@ -10,9 +11,10 @@ import { TaskNfcTagsSummary } from "./task-nfc-tags-summary";
 import { CompletionHistoryList } from "./completion-history-list";
 import { useCompleteTask } from "@/hooks/use-complete-task";
 import { useMembers } from "@/hooks/use-household-data";
+import { useUndoToast } from "./undo-toast-provider";
 import { getTaskStatus } from "@/lib/task-status";
 import { formatDate, formatDueLabel } from "@/lib/format";
-import { fetcher, patchJson } from "@/lib/client/fetcher";
+import { fetcher, patchJson, postJson } from "@/lib/client/fetcher";
 import { mutate as globalMutate } from "swr";
 import type { TaskDto } from "@/lib/api/types";
 import type { TaskStats } from "@/lib/services/stats-service";
@@ -30,6 +32,10 @@ export function TaskDetail({
 }) {
   const { members } = useMembers();
   const { requestComplete, completeWithMember, pendingTask, cancelPending, busyTaskId } = useCompleteTask();
+  const { show } = useUndoToast();
+  const [skipping, setSkipping] = useState(false);
+  const [snoozing, setSnoozing] = useState(false);
+  const [snoozeDays, setSnoozeDays] = useState(1);
   const { data: stats } = useSWR<TaskStats>(`/api/stats/tasks/${initialTask.id}`, fetcher);
   // Seeded with the server-rendered task so the page is instant, but kept live via
   // SWR: completing/archiving revalidates `/api/tasks/*` and this picks it up without
@@ -45,6 +51,28 @@ export function TaskDetail({
   async function toggleArchive() {
     await patchJson(`/api/tasks/${task.id}`, { active: !task.active });
     await globalMutate((key) => typeof key === "string" && key.startsWith("/api/"), undefined, { revalidate: true });
+  }
+
+  async function handleSkip() {
+    setSkipping(true);
+    try {
+      const { task: updated } = await postJson<{ task: TaskDto }>(`/api/tasks/${task.id}/skip`, {});
+      await globalMutate((key) => typeof key === "string" && key.startsWith("/api/"), undefined, { revalidate: true });
+      show(`Skipped — next due ${formatDate(updated.dueDate, dateFormat)}`);
+    } finally {
+      setSkipping(false);
+    }
+  }
+
+  async function handleSnooze() {
+    setSnoozing(true);
+    try {
+      const { task: updated } = await postJson<{ task: TaskDto }>(`/api/tasks/${task.id}/snooze`, { days: snoozeDays });
+      await globalMutate((key) => typeof key === "string" && key.startsWith("/api/"), undefined, { revalidate: true });
+      show(`Snoozed ${snoozeDays} day${snoozeDays === 1 ? "" : "s"} — now due ${formatDate(updated.dueDate, dateFormat)}`);
+    } finally {
+      setSnoozing(false);
+    }
   }
 
   return (
@@ -105,6 +133,39 @@ export function TaskDetail({
           <CheckIcon width={22} height={22} strokeWidth={3} />
           {busy ? "Completing…" : "Mark complete"}
         </button>
+      ) : null}
+
+      {task.active ? (
+        <div className="space-y-2">
+          <button
+            onClick={handleSkip}
+            disabled={skipping}
+            className="w-full rounded-full border-2 border-border py-3 text-sm font-bold text-text-muted disabled:opacity-60"
+          >
+            {skipping ? "Skipping…" : "Skip this occurrence"}
+          </button>
+          <div className="flex items-center gap-2 rounded-full border-2 border-border py-1.5 pl-4 pr-1.5">
+            <span className="text-sm font-bold text-text-muted">Snooze for</span>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={snoozeDays}
+              onChange={(e) => setSnoozeDays(Math.min(365, Math.max(1, Number(e.target.value) || 1)))}
+              aria-label="Days to snooze"
+              className="w-12 rounded-full bg-surface-alt px-2 py-1 text-center text-sm font-bold"
+            />
+            <span className="text-sm font-bold text-text-muted">day{snoozeDays === 1 ? "" : "s"}</span>
+            <button
+              onClick={handleSnooze}
+              disabled={snoozing}
+              className="ml-auto shrink-0 rounded-full px-3 py-1.5 text-sm font-extrabold disabled:opacity-60"
+              style={{ backgroundColor: "var(--color-primary-soft)", color: "var(--color-primary)" }}
+            >
+              {snoozing ? "…" : "Snooze"}
+            </button>
+          </div>
+        </div>
       ) : (
         <button
           onClick={toggleArchive}

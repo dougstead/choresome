@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
 import { addDays, calendarDateToUtcDate, diffInDays, instantToCalendarDate, utcDateToCalendarDate } from "@/lib/dates";
+import { initialDueDate } from "@/lib/recurrence";
+import { parseRecurrenceRule } from "@/lib/recurrence/serialize";
 import { getHouseholdSettings } from "./settings-service";
 
 const HOUSEHOLD_ID = 1;
@@ -20,12 +22,20 @@ export interface HolidayModeResult {
  * due-date calculation to that day until it's turned off, so nothing creeps
  * further overdue while the household is away.
  *
- * Off: the actual "resume" step. Every active task's due date is shifted
- * forward by exactly how many days Holiday mode was on, which preserves
- * each task's relative overdue/due-in-N-days position from the moment
- * Holiday mode started -- a task that was already overdue when the holiday
- * began is still exactly as overdue afterwards, and one that wasn't is
- * still due on schedule, just later.
+ * Off: the actual "resume" step, and it treats the two recurrence models
+ * differently:
+ *  - Completion-relative tasks have their due date shifted forward by
+ *    exactly how many days Holiday mode was on, which preserves each
+ *    task's relative overdue/due-in-N-days position from the moment
+ *    Holiday mode started -- a task that was already overdue when the
+ *    holiday began is still exactly as overdue afterwards.
+ *  - Fixed-calendar tasks (bin day, a service date) are instead snapped
+ *    straight to their next real occurrence on/after today. A flat day
+ *    shift doesn't make sense for these -- the collection truck doesn't
+ *    care that the household was away, and shifting by an arbitrary
+ *    number of days can land on the wrong weekday entirely. This is the
+ *    same "anchored to the calendar, not to personal neglect" behaviour
+ *    fixed-calendar tasks already have outside Holiday mode.
  */
 export async function setHolidayMode(enabled: boolean): Promise<HolidayModeResult> {
   const settings = await getHouseholdSettings();
@@ -51,9 +61,16 @@ export async function setHolidayMode(enabled: boolean): Promise<HolidayModeResul
   const tasksShifted = await prisma.$transaction(async (tx) => {
     let shifted = 0;
     if (daysPaused > 0) {
-      const activeTasks = await tx.task.findMany({ where: { active: true }, select: { id: true, dueDate: true } });
+      const activeTasks = await tx.task.findMany({
+        where: { active: true },
+        select: { id: true, dueDate: true, recurrenceConfig: true },
+      });
       for (const task of activeTasks) {
-        const newDueDate = addDays(utcDateToCalendarDate(task.dueDate), daysPaused);
+        const rule = parseRecurrenceRule(task.recurrenceConfig);
+        const newDueDate =
+          rule.type === "FIXED_CALENDAR"
+            ? initialDueDate(rule, today)
+            : addDays(utcDateToCalendarDate(task.dueDate), daysPaused);
         await tx.task.update({ where: { id: task.id }, data: { dueDate: calendarDateToUtcDate(newDueDate) } });
       }
       shifted = activeTasks.length;

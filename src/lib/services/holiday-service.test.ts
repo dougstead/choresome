@@ -47,7 +47,7 @@ describe("setHolidayMode", () => {
     vi.useRealTimers();
   });
 
-  it("turning it off shifts every active task's due date forward by the number of days paused", async () => {
+  it("turning it off shifts completion-relative tasks by days-paused, but snaps fixed-calendar tasks to their next real occurrence", async () => {
     const { area } = await seed();
     const relative: CompletionRelativeRule = { type: "COMPLETION_RELATIVE", intervalValue: 3, intervalUnit: "days" };
     const fixed: FixedCalendarRule = {
@@ -84,14 +84,38 @@ describe("setHolidayMode", () => {
     const updatedRelative = await prisma.task.findUniqueOrThrow({ where: { id: notYetDue.id } });
     expect(utcDateToCalendarDate(updatedRelative.dueDate)).toEqual({ year: 2026, month: 9, day: 20 });
 
+    // Was due Tue Sept 15 (next Tuesday on/after the Thursday it was created).
+    // A flat +10-day shift would land on Fri Sept 25 -- the wrong weekday for
+    // a "every Tuesday" task. Instead it snaps to the next real Tuesday
+    // on/after Sept 20 (a Sunday), which is Sept 22.
     const updatedFixed = await prisma.task.findUniqueOrThrow({ where: { id: bins.id } });
-    expect(utcDateToCalendarDate(updatedFixed.dueDate)).toEqual({ year: 2026, month: 9, day: 25 });
+    expect(utcDateToCalendarDate(updatedFixed.dueDate)).toEqual({ year: 2026, month: 9, day: 22 });
 
     // Was 5 days overdue on Sept 10 (holiday start); after the 10-day shift
     // and 10 real days elapsing, it's still exactly 5 days overdue.
     const updatedOverdue = await prisma.task.findUniqueOrThrow({ where: { id: overdueAlready.id } });
     expect(utcDateToCalendarDate(updatedOverdue.dueDate)).toEqual({ year: 2026, month: 9, day: 15 });
 
+    vi.useRealTimers();
+  });
+
+  it("snaps a fixed-calendar task to its next real occurrence even if it was already overdue before the holiday started", async () => {
+    const { area } = await seed();
+    const fixed: FixedCalendarRule = {
+      type: "FIXED_CALENDAR",
+      pattern: { pattern: "weekly", weekdays: [2], intervalWeeks: 1, anchorDate: { year: 2026, month: 9, day: 8 } },
+    };
+    vi.setSystemTime(new Date("2026-09-10T08:00:00.000Z"));
+    const bins = await createTask({ name: "Bins", areaId: area.id, recurrenceRule: fixed });
+    // Pretend last Tuesday's bins were also missed, before the holiday even started.
+    await prisma.task.update({ where: { id: bins.id }, data: { dueDate: new Date("2026-09-01T00:00:00.000Z") } });
+
+    await setHolidayMode(true);
+    vi.setSystemTime(new Date("2026-09-20T08:00:00.000Z"));
+    await setHolidayMode(false);
+
+    const updated = await prisma.task.findUniqueOrThrow({ where: { id: bins.id } });
+    expect(utcDateToCalendarDate(updated.dueDate)).toEqual({ year: 2026, month: 9, day: 22 });
     vi.useRealTimers();
   });
 

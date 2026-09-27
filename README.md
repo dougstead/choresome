@@ -85,12 +85,23 @@ remembered member (use Undo to correct one).
 - **Holiday mode** (Settings → Holiday mode) is a household-wide pause
   button. While it's on, nothing's due-date status can get any more
   overdue — every page (including the wall display) freezes "today" at the
-  moment you turned it on. Turning it back off shifts every active task's
-  due date forward by exactly how many days you were away, so a task that
-  was already 2 days overdue when you left is still exactly 2 days overdue
-  when you get back, and one that wasn't due yet still isn't. A banner on
-  the dashboard (and a small pill on the wall display) reminds you it's on,
-  with a one-tap "We're back" to end it.
+  moment you turned it on. Turning it back off resumes the two recurrence
+  models differently:
+  - **Completion-relative** tasks are shifted forward by exactly how many
+    days you were away, so a task that was already 2 days overdue when you
+    left is still exactly 2 days overdue when you get back, and one that
+    wasn't due yet still isn't.
+  - **Fixed-calendar** tasks (bin day, a service date) instead snap
+    straight to their next real occurrence on/after today. A flat day-shift
+    doesn't make sense for these — the collection truck doesn't care that
+    you were away, and shifting by an arbitrary number of days can land the
+    due date on the wrong weekday entirely. This also forgives any backlog
+    on that task from before the holiday, consistent with how fixed-calendar
+    tasks already work outside Holiday mode (anchored to the calendar, not
+    to personal neglect).
+
+  A banner on the dashboard (and a small pill on the wall display) reminds
+  you it's on, with a one-tap "We're back" to end it.
 - **Skip** (on a task's detail page) advances its due date exactly as if
   it had just been completed, using the same recurrence rule — but records
   no completion, so nobody's credited and the history stays honest. Use it

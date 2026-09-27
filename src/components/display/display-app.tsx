@@ -10,6 +10,7 @@ import { getTaskStatus, type TaskStatus } from "@/lib/task-status";
 import { formatDueLabel, formatRelativeTime } from "@/lib/format";
 import { fetcher, postJson } from "@/lib/client/fetcher";
 import { JOINT_CHOICE } from "@/components/member-picker-sheet";
+import { calendarDateToIsoDate, instantToCalendarDate } from "@/lib/dates";
 import type { CompletionEventWithTaskDto, TaskDto } from "@/lib/api/types";
 import type { DisplayConfig } from "@/lib/validation/settings";
 
@@ -22,13 +23,15 @@ function revalidateEverything() {
 type Mode = { kind: "dashboard" } | { kind: "picking"; task: TaskDto } | { kind: "confirmed"; taskName: string; memberName: string };
 
 export function DisplayApp({
-  todayIso,
+  todayIso: initialTodayIso,
+  timezone,
   upcomingWindowDays,
   householdName,
   timeFormat,
   displayConfig,
 }: {
   todayIso: string;
+  timezone: string;
   upcomingWindowDays: number;
   householdName: string;
   timeFormat: string;
@@ -46,9 +49,34 @@ export function DisplayApp({
   const [idle, setIdle] = useState(false);
   const lastInteraction = useRef<number | null>(null);
 
+  // SWR skips re-rendering consumers when a poll returns data that's deep-equal
+  // to what's cached, which is the common case here (nothing new completed).
+  // Without this, "3 minutes ago" and "due today" never advance on a kiosk
+  // display that's never manually reloaded -- this tick forces a re-render
+  // every 30s regardless, and refreshes `todayIso` so day-boundary rollovers
+  // (a task going from "due today" to "overdue" at midnight) aren't stuck
+  // until someone refreshes the page.
+  const [todayIso, setTodayIso] = useState(initialTodayIso);
+  const [, forceTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTodayIso(calendarDateToIsoDate(instantToCalendarDate(new Date(), timezone)));
+      forceTick((t) => t + 1);
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [timezone]);
+
   const wake = useCallback(() => {
     lastInteraction.current = Date.now();
     setIdle(false);
+    // Requesting fullscreen needs a user gesture -- browsers reject a call
+    // with no click/tap behind it. A phone lock/unlock (or the screensaver
+    // taking over) drops fullscreen, so re-request it on the tap that wakes
+    // the display back up rather than requiring a separate manual toggle.
+    if (typeof document !== "undefined" && !document.fullscreenElement) {
+      void document.documentElement.requestFullscreen().catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -61,6 +89,20 @@ export function DisplayApp({
     }, 1000);
     return () => clearInterval(id);
   }, [displayConfig.idleTimeoutSeconds]);
+
+  useEffect(() => {
+    // Best-effort: some Android/Chrome versions carry enough "user activation"
+    // from the unlock gesture itself to allow this without a tap on the page.
+    // Silently ignored where it's not allowed -- the wake()-on-tap path above
+    // is the reliable fallback.
+    function onVisible() {
+      if (document.visibilityState === "visible" && !document.fullscreenElement) {
+        void document.documentElement.requestFullscreen().catch(() => {});
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   const withStatus = tasks.map((task) => ({ task, info: getTaskStatus(task.dueDate, todayIso, upcomingWindowDays) }));
   const relevant = withStatus

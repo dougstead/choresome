@@ -1,10 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import useSWR from "swr";
-import { fetcher } from "@/lib/client/fetcher";
+import Link from "next/link";
+import useSWR, { mutate as globalMutate } from "swr";
+import { deleteJson, fetcher } from "@/lib/client/fetcher";
 import { formatDate } from "@/lib/format";
+import { useUndoToast } from "./undo-toast-provider";
+import { UndoIcon } from "./icons";
 import type { AreaDto, CompletionEventWithTaskDto, MemberDto } from "@/lib/api/types";
+
+function revalidateEverything() {
+  return globalMutate((key) => typeof key === "string" && key.startsWith("/api/"), undefined, { revalidate: true });
+}
 
 function groupLabel(dateIso: string, dateFormat: string): string {
   const date = new Date(dateIso);
@@ -36,10 +43,24 @@ export function HistoryBrowser({
   if (from) params.set("from", new Date(from).toISOString());
   if (to) params.set("to", new Date(`${to}T23:59:59`).toISOString());
 
-  const { data, isLoading } = useSWR<{ events: CompletionEventWithTaskDto[] }>(
+  const { data, isLoading, mutate } = useSWR<{ events: CompletionEventWithTaskDto[] }>(
     `/api/completions?${params.toString()}`,
     fetcher
   );
+  const { show } = useUndoToast();
+  const [undoingId, setUndoingId] = useState<string | null>(null);
+
+  async function handleUndo(event: CompletionEventWithTaskDto) {
+    setUndoingId(event.id);
+    try {
+      await deleteJson(`/api/completions/${event.id}`);
+      await mutate();
+      await revalidateEverything();
+      show(`${event.task.name} completion undone`);
+    } finally {
+      setUndoingId(null);
+    }
+  }
 
   const groups = useMemo(() => {
     const events = data?.events ?? [];
@@ -102,19 +123,31 @@ export function HistoryBrowser({
           <ul className="space-y-2">
             {events.map((event) => (
               <li key={event.id} className="flex items-center gap-3 rounded-[var(--radius-card)] border border-border bg-surface p-3.5">
-                <span className="text-xl">{event.task.icon}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm">
-                    <span className="font-bold">{event.member.name}</span> completed{" "}
-                    <span className="font-bold">{event.task.name}</span>
+                <Link href={`/tasks/${event.taskId}`} className="flex min-w-0 flex-1 items-center gap-3">
+                  <span className="text-xl">{event.task.icon}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm">
+                      <span className="font-bold">{event.member.name}</span> completed{" "}
+                      <span className="font-bold">{event.task.name}</span>
+                    </span>
+                    <span className="text-xs text-text-muted">
+                      {new Date(event.completedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                      {" · "}
+                      {event.task.area.icon} {event.task.area.name}
+                      {event.note ? ` · ${event.note}` : ""}
+                    </span>
                   </span>
-                  <span className="text-xs text-text-muted">
-                    {new Date(event.completedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-                    {" · "}
-                    {event.task.area.icon} {event.task.area.name}
-                    {event.note ? ` · ${event.note}` : ""}
-                  </span>
-                </span>
+                </Link>
+                <button
+                  onClick={() => handleUndo(event)}
+                  disabled={undoingId === event.id}
+                  aria-label={`Undo ${event.task.name} completion`}
+                  className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-bold disabled:opacity-50"
+                  style={{ backgroundColor: "var(--color-surface-alt)", color: "var(--color-text-muted)" }}
+                >
+                  <UndoIcon width={14} height={14} />
+                  {undoingId === event.id ? "…" : "Undo"}
+                </button>
               </li>
             ))}
           </ul>

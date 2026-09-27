@@ -9,6 +9,7 @@ export default async function DisplayPage() {
   return (
     <DisplayApp
       todayIso={todayIso}
+      timezone={settings.timezone}
       upcomingWindowDays={settings.upcomingWindowDays}
       householdName={settings.name}
       timeFormat={settings.timeFormat}

@@ -1,17 +1,22 @@
 "use client";
 
-import useSWR from "swr";
+import { useState } from "react";
+import useSWR, { mutate as globalMutate } from "swr";
 import Link from "next/link";
 import { TaskRow } from "./task-row";
 import { MemberPickerSheet } from "./member-picker-sheet";
-import { DoneBadge } from "./status-badge";
-import { PlusIcon } from "./icons";
+import { PlusIcon, UndoIcon } from "./icons";
 import { useCompleteTask } from "@/hooks/use-complete-task";
 import { useMembers, useTasks } from "@/hooks/use-household-data";
+import { useUndoToast } from "./undo-toast-provider";
 import { getTaskStatus } from "@/lib/task-status";
 import { formatRelativeTime } from "@/lib/format";
-import { fetcher } from "@/lib/client/fetcher";
+import { deleteJson, fetcher } from "@/lib/client/fetcher";
 import type { CompletionEventWithTaskDto } from "@/lib/api/types";
+
+function revalidateEverything() {
+  return globalMutate((key) => typeof key === "string" && key.startsWith("/api/"), undefined, { revalidate: true });
+}
 
 function greeting(hour: number): string {
   if (hour < 5) return "Still up?";
@@ -33,6 +38,19 @@ export function Dashboard({
   const { members } = useMembers();
   const { data: historyData } = useSWR<{ events: CompletionEventWithTaskDto[] }>("/api/completions?limit=8", fetcher);
   const { requestComplete, completeWithMember, pendingTask, cancelPending, busyTaskId } = useCompleteTask();
+  const { show } = useUndoToast();
+  const [undoingId, setUndoingId] = useState<string | null>(null);
+
+  async function handleUndo(event: CompletionEventWithTaskDto) {
+    setUndoingId(event.id);
+    try {
+      await deleteJson(`/api/completions/${event.id}`);
+      await revalidateEverything();
+      show(`${event.task.name} completion undone`);
+    } finally {
+      setUndoingId(null);
+    }
+  }
 
   const withStatus = tasks.map((task) => ({ task, info: getTaskStatus(task.dueDate, todayIso, upcomingWindowDays) }));
   const overdue = withStatus.filter((t) => t.info.status === "overdue").sort((a, b) => a.info.daysFromToday - b.info.daysFromToday);
@@ -109,14 +127,25 @@ export function Dashboard({
                 key={event.id}
                 className="flex items-center gap-3 rounded-[var(--radius-card)] border border-border bg-surface p-3.5"
               >
-                <span className="text-xl">{event.task.icon}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold">{event.task.name}</span>
-                  <span className="text-xs text-text-muted">
-                    {event.member.name} &middot; {formatRelativeTime(event.completedAt)}
+                <Link href={`/tasks/${event.taskId}`} className="flex min-w-0 flex-1 items-center gap-3">
+                  <span className="text-xl">{event.task.icon}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-bold">{event.task.name}</span>
+                    <span className="text-xs text-text-muted">
+                      {event.member.name} &middot; {formatRelativeTime(event.completedAt)}
+                    </span>
                   </span>
-                </span>
-                <DoneBadge text="Done" />
+                </Link>
+                <button
+                  onClick={() => handleUndo(event)}
+                  disabled={undoingId === event.id}
+                  aria-label={`Undo ${event.task.name} completion`}
+                  className="flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-bold disabled:opacity-50"
+                  style={{ backgroundColor: "var(--color-surface-alt)", color: "var(--color-text-muted)" }}
+                >
+                  <UndoIcon width={14} height={14} />
+                  {undoingId === event.id ? "…" : "Undo"}
+                </button>
               </li>
             ))}
           </ul>

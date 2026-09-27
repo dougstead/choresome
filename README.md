@@ -37,6 +37,10 @@ overwritten.
   derived from real data, not a single `lastDone` field.
 - Gives each device (your phone, your partner's phone, the wall display) its
   own quick-complete flow, with an undo window and double-tap protection.
+- Isn't limited to the few-seconds undo toast after completing: the
+  Recently Completed feed (dashboard) and the History page both link
+  straight through to the task and offer their own **Undo**, so a
+  mis-tap from earlier can be corrected any time, not just right away.
 - Surfaces what's overdue, due today, and coming up — without turning
   household chores into a competition (no points, no streaks).
 - Works entirely on your home network, with no cloud dependency.
@@ -500,7 +504,10 @@ foreground reminders described below).
    `http://<mini-pc-address>:3010/display`).
 3. Add it to the home screen (see above) so it can be launched full-screen,
    or use the ⛶ button in the top-right corner of the display itself to
-   enter fullscreen from the browser tab.
+   enter fullscreen from the browser tab. Fullscreen re-requests itself on
+   the next tap after the phone locks/unlocks (browsers only allow entering
+   fullscreen from a genuine tap, so this is as automatic as it gets short
+   of a dedicated kiosk-mode app) — tap anywhere if it comes back windowed.
 4. In Android Settings, disable the screen timeout/lock (Settings → Display
    → Screen timeout → longest option, or use a "Keep screen on" / kiosk app
    if you want to be thorough) — Choresome's own screensaver (configurable
@@ -512,7 +519,10 @@ foreground reminders described below).
    dashboard automatically. After the configured idle period it shows a
    low-brightness clock/date screensaver instead of a static screen (it also
    nudges its own position periodically to reduce the chance of burn-in);
-   tapping anywhere wakes it.
+   tapping anywhere wakes it. Due dates and "X ago" timestamps refresh
+   themselves in the background every 30 seconds, so a display left running
+   for days stays current (including rolling over to the next day) without
+   ever needing a manual reload.
 
 The display route requires no special configuration on the server side — as
 far as the backend is concerned, it's just another browser hitting the same

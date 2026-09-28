@@ -4,15 +4,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { DisplayClock } from "./display-clock";
 import { Screensaver } from "./screensaver";
-import { CheckIcon } from "@/components/icons";
+import { CheckIcon, ClockIcon } from "@/components/icons";
 import { useMembers, useSettings, useTasks } from "@/hooks/use-household-data";
 import { getTaskStatus, type TaskStatus } from "@/lib/task-status";
-import { formatDueLabel, formatRelativeTime } from "@/lib/format";
+import { formatDate, formatDueLabel, formatRelativeTime } from "@/lib/format";
 import { fetcher, postJson } from "@/lib/client/fetcher";
 import { JOINT_CHOICE } from "@/components/member-picker-sheet";
 import { calendarDateToIsoDate, instantToCalendarDate } from "@/lib/dates";
-import type { CompletionEventWithTaskDto, TaskDto } from "@/lib/api/types";
+import type { CompletionEventWithTaskDto, MemberDto, TaskDto } from "@/lib/api/types";
 import type { DisplayConfig } from "@/lib/validation/settings";
+import type { TaskStats } from "@/lib/services/stats-service";
+
+// Tap targets rather than a number field: the display is a touch-only kiosk.
+const SNOOZE_CHOICES = [
+  { days: 1, label: "1 day" },
+  { days: 2, label: "2 days" },
+  { days: 3, label: "3 days" },
+  { days: 7, label: "1 week" },
+  { days: 14, label: "2 weeks" },
+];
 
 const STATUS_ORDER: Record<TaskStatus, number> = { overdue: 0, today: 1, upcoming: 2, scheduled: 3 };
 
@@ -20,7 +30,9 @@ function revalidateEverything() {
   return globalMutate((key) => typeof key === "string" && key.startsWith("/api/"), undefined, { revalidate: true });
 }
 
-type Mode = { kind: "dashboard" } | { kind: "picking"; task: TaskDto } | { kind: "confirmed"; taskName: string; memberName: string };
+type Confirmation = { headline: string; detail: string; icon: "check" | "clock" };
+
+type Mode = { kind: "dashboard" } | { kind: "task"; task: TaskDto } | ({ kind: "confirmed" } & Confirmation);
 
 export function DisplayApp({
   todayIso: initialTodayIso,
@@ -28,6 +40,7 @@ export function DisplayApp({
   upcomingWindowDays,
   householdName,
   timeFormat,
+  dateFormat,
   displayConfig,
   holidayMode: initialHolidayMode,
 }: {
@@ -36,6 +49,7 @@ export function DisplayApp({
   upcomingWindowDays: number;
   householdName: string;
   timeFormat: string;
+  dateFormat: string;
   displayConfig: DisplayConfig;
   holidayMode: boolean;
 }) {
@@ -121,11 +135,39 @@ export function DisplayApp({
     .sort((a, b) => STATUS_ORDER[a.info.status] - STATUS_ORDER[b.info.status] || a.info.daysFromToday - b.info.daysFromToday);
   const tasksRemainingToday = withStatus.filter((t) => t.info.status === "overdue" || t.info.status === "today").length;
 
+  const [busy, setBusy] = useState(false);
+
+  function showConfirmation(confirmation: Confirmation) {
+    setMode({ kind: "confirmed", ...confirmation });
+    setTimeout(() => setMode({ kind: "dashboard" }), 1600);
+  }
+
   async function handlePick(task: TaskDto, memberId: string, memberName: string) {
-    setMode({ kind: "confirmed", taskName: task.name, memberName });
+    showConfirmation({ headline: "Completed!", detail: `${task.name} — ${memberName}`, icon: "check" });
     await postJson(`/api/tasks/${task.id}/complete`, memberId === JOINT_CHOICE ? { joint: true } : { memberId });
     await revalidateEverything();
-    setTimeout(() => setMode({ kind: "dashboard" }), 1600);
+  }
+
+  async function handleSkip(task: TaskDto) {
+    setBusy(true);
+    try {
+      const { task: updated } = await postJson<{ task: TaskDto }>(`/api/tasks/${task.id}/skip`, {});
+      await revalidateEverything();
+      showConfirmation({ headline: "Skipped", detail: `${task.name} — next due ${formatDate(updated.dueDate, dateFormat)}`, icon: "clock" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSnooze(task: TaskDto, days: number) {
+    setBusy(true);
+    try {
+      const { task: updated } = await postJson<{ task: TaskDto }>(`/api/tasks/${task.id}/snooze`, { days });
+      await revalidateEverything();
+      showConfirmation({ headline: "Snoozed", detail: `${task.name} — now due ${formatDate(updated.dueDate, dateFormat)}`, icon: "clock" });
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (idle) {
@@ -185,7 +227,7 @@ export function DisplayApp({
               {relevant.map(({ task, info }) => (
                 <button
                   key={task.id}
-                  onClick={() => setMode({ kind: "picking", task })}
+                  onClick={() => setMode({ kind: "task", task })}
                   className="flex items-start gap-3 rounded-3xl border-2 p-4 text-left shadow-sm transition active:scale-[0.98]"
                   style={{
                     borderColor: info.status === "overdue" ? "var(--color-overdue)" : "var(--color-border)",
@@ -235,36 +277,19 @@ export function DisplayApp({
         </section>
       </div>
 
-      {mode.kind === "picking" ? (
-        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-8 bg-black/70 p-8">
-          <h2 className="text-3xl font-extrabold text-white">Who did &ldquo;{mode.task.name}&rdquo;?</h2>
-          <div className="grid w-full max-w-2xl grid-cols-2 gap-6">
-            {members.map((member) => (
-              <button
-                key={member.id}
-                onClick={() => handlePick(mode.task, member.id, member.name)}
-                className="flex flex-col items-center gap-3 rounded-3xl bg-white py-10 text-3xl font-extrabold shadow-2xl transition active:scale-95"
-                style={{ color: "#2b2621" }}
-              >
-                <span className="text-7xl">{member.icon}</span>
-                {member.name.toUpperCase()}
-              </button>
-            ))}
-            {mode.task.allowJoint ? (
-              <button
-                onClick={() => handlePick(mode.task, JOINT_CHOICE, "Joint effort")}
-                className="col-span-2 flex items-center justify-center gap-4 rounded-3xl bg-white py-8 text-3xl font-extrabold shadow-2xl transition active:scale-95"
-                style={{ color: "#2b2621" }}
-              >
-                <span className="text-6xl">🤝</span>
-                JOINT EFFORT
-              </button>
-            ) : null}
-          </div>
-          <button onClick={() => setMode({ kind: "dashboard" })} className="text-lg font-bold text-white/70">
-            Cancel
-          </button>
-        </div>
+      {mode.kind === "task" ? (
+        <DisplayTaskSheet
+          task={mode.task}
+          todayIso={todayIso}
+          upcomingWindowDays={upcomingWindowDays}
+          dateFormat={dateFormat}
+          members={members}
+          busy={busy}
+          onPick={(memberId, memberName) => handlePick(mode.task, memberId, memberName)}
+          onSkip={() => handleSkip(mode.task)}
+          onSnooze={(days) => handleSnooze(mode.task, days)}
+          onClose={() => setMode({ kind: "dashboard" })}
+        />
       ) : null}
 
       {mode.kind === "confirmed" ? (
@@ -273,14 +298,147 @@ export function DisplayApp({
             className="flex h-28 w-28 items-center justify-center rounded-full"
             style={{ backgroundColor: "var(--color-primary)" }}
           >
-            <CheckIcon width={56} height={56} strokeWidth={3} className="text-white" />
+            {mode.icon === "check" ? (
+              <CheckIcon width={56} height={56} strokeWidth={3} className="text-white" />
+            ) : (
+              <ClockIcon width={56} height={56} strokeWidth={2.5} className="text-white" />
+            )}
           </div>
-          <p className="text-3xl font-extrabold text-white">Completed!</p>
-          <p className="text-lg text-white/70">
-            {mode.taskName} — {mode.memberName}
-          </p>
+          <p className="text-3xl font-extrabold text-white">{mode.headline}</p>
+          <p className="text-lg text-white/70">{mode.detail}</p>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Opened by tapping a task on the display. Completing stays a single tap (the
+ * member buttons are right here), with the task's details plus Skip/Snooze
+ * alongside for when it isn't getting done today.
+ */
+function DisplayTaskSheet({
+  task,
+  todayIso,
+  upcomingWindowDays,
+  dateFormat,
+  members,
+  busy,
+  onPick,
+  onSkip,
+  onSnooze,
+  onClose,
+}: {
+  task: TaskDto;
+  todayIso: string;
+  upcomingWindowDays: number;
+  dateFormat: string;
+  members: MemberDto[];
+  busy: boolean;
+  onPick: (memberId: string, memberName: string) => void;
+  onSkip: () => void;
+  onSnooze: (days: number) => void;
+  onClose: () => void;
+}) {
+  const { data: stats } = useSWR<TaskStats>(`/api/stats/tasks/${task.id}`, fetcher);
+  const info = getTaskStatus(task.dueDate, todayIso, upcomingWindowDays);
+  const overdue = info.status === "overdue";
+
+  return (
+    <div className="fixed inset-0 z-40 overflow-y-auto bg-black/70 p-4 sm:p-8" onClick={onClose}>
+      <div
+        className="mx-auto flex max-w-3xl flex-col gap-6 rounded-3xl bg-surface p-6 text-text shadow-2xl sm:p-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-4">
+          <span className="shrink-0 text-6xl leading-none">{task.icon}</span>
+          <div className="min-w-0 flex-1">
+            <h2 className="break-words text-3xl font-extrabold leading-tight">{task.name}</h2>
+            <p className="mt-1 text-lg font-bold" style={{ color: overdue ? "var(--color-overdue)" : "var(--color-text-muted)" }}>
+              {formatDueLabel(info)} · {formatDate(task.dueDate, dateFormat)}
+            </p>
+            <p className="mt-0.5 text-base text-text-muted">
+              {task.area.icon} {task.area.name}
+              {task.recurrenceSummary ? ` · ${task.recurrenceSummary}` : ""}
+              {task.estimatedDurationMinutes ? ` · ~${task.estimatedDurationMinutes} min` : ""}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="shrink-0 rounded-full bg-surface-alt px-4 py-2 text-lg font-bold text-text-muted"
+          >
+            ✕
+          </button>
+        </div>
+
+        {task.description ? <p className="text-lg">{task.description}</p> : null}
+
+        <p className="text-base text-text-muted">
+          Last done:{" "}
+          <span className="font-bold text-text">
+            {stats === undefined
+              ? "…"
+              : stats.lastCompletedAt
+                ? `${formatRelativeTime(stats.lastCompletedAt)} by ${stats.lastCompletedByMemberName}`
+                : "never"}
+          </span>
+        </p>
+
+        <section>
+          <h3 className="mb-3 text-lg font-extrabold uppercase tracking-wide text-text-muted">Who did it?</h3>
+          <div className="grid grid-cols-2 gap-4">
+            {members.map((member) => (
+              <button
+                key={member.id}
+                onClick={() => onPick(member.id, member.name)}
+                disabled={busy}
+                className="flex flex-col items-center gap-2 rounded-3xl py-6 text-2xl font-extrabold shadow-md transition active:scale-95 disabled:opacity-60"
+                style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}
+              >
+                <span className="text-5xl">{member.icon}</span>
+                {member.name.toUpperCase()}
+              </button>
+            ))}
+            {task.allowJoint ? (
+              <button
+                onClick={() => onPick(JOINT_CHOICE, "Joint effort")}
+                disabled={busy}
+                className="col-span-2 flex items-center justify-center gap-4 rounded-3xl py-5 text-2xl font-extrabold shadow-md transition active:scale-95 disabled:opacity-60"
+                style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}
+              >
+                <span className="text-4xl">🤝</span>
+                JOINT EFFORT
+              </button>
+            ) : null}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="mb-3 text-lg font-extrabold uppercase tracking-wide text-text-muted">Snooze for</h3>
+          <div className="flex flex-wrap gap-3">
+            {SNOOZE_CHOICES.map((choice) => (
+              <button
+                key={choice.days}
+                onClick={() => onSnooze(choice.days)}
+                disabled={busy}
+                className="rounded-full px-5 py-3 text-lg font-extrabold transition active:scale-95 disabled:opacity-60"
+                style={{ backgroundColor: "var(--color-primary-soft)", color: "var(--color-primary)" }}
+              >
+                {choice.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <button
+          onClick={onSkip}
+          disabled={busy}
+          className="w-full rounded-full border-2 border-border py-4 text-lg font-bold text-text-muted transition active:scale-[0.98] disabled:opacity-60"
+        >
+          Skip this occurrence
+        </button>
+      </div>
     </div>
   );
 }

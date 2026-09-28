@@ -7,6 +7,7 @@ import { calendarDateToIsoDate } from "@/lib/dates";
 import { postJson, patchJson } from "@/lib/client/fetcher";
 import { useAreas, useMembers } from "@/hooks/use-household-data";
 import type { TaskDto } from "@/lib/api/types";
+import { NumberInput } from "@/components/number-input";
 
 const ICONS = ["🧽", "🧹", "🧺", "🚿", "🛁", "🧻", "🍽️", "🪟", "🛏️", "🗑️", "🔥", "🧯", "🚗", "🌿", "💡"];
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -256,11 +257,10 @@ export function TaskForm({ task, defaultAreaId }: { task?: TaskDto; defaultAreaI
         {state.mode === "relative" ? (
           <div className="mt-4 flex items-center gap-2">
             <span className="text-sm">Every</span>
-            <input
-              type="number"
+            <NumberInput
               min={1}
               value={state.intervalValue}
-              onChange={(e) => set("intervalValue", Math.max(1, Number(e.target.value)))}
+              onChange={(n) => set("intervalValue", n)}
               className="w-20 rounded-[var(--radius-control)] border border-border bg-surface px-3 py-2 text-base"
             />
             <select
@@ -313,11 +313,10 @@ export function TaskForm({ task, defaultAreaId }: { task?: TaskDto; defaultAreaI
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <span>Every</span>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     value={state.intervalWeeks}
-                    onChange={(e) => set("intervalWeeks", Math.max(1, Number(e.target.value)))}
+                    onChange={(n) => set("intervalWeeks", n)}
                     className="w-16 rounded-[var(--radius-control)] border border-border bg-surface px-2 py-1.5"
                   />
                   <span>week(s)</span>
@@ -328,20 +327,18 @@ export function TaskForm({ task, defaultAreaId }: { task?: TaskDto; defaultAreaI
             {state.fixedPattern === "monthly" && (
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span>Day</span>
-                <input
-                  type="number"
+                <NumberInput
                   min={1}
                   max={31}
                   value={state.dayOfMonth}
-                  onChange={(e) => set("dayOfMonth", Math.min(31, Math.max(1, Number(e.target.value))))}
+                  onChange={(n) => set("dayOfMonth", n)}
                   className="w-16 rounded-[var(--radius-control)] border border-border bg-surface px-2 py-1.5"
                 />
                 <span>of the month, every</span>
-                <input
-                  type="number"
+                <NumberInput
                   min={1}
                   value={state.intervalMonths}
-                  onChange={(e) => set("intervalMonths", Math.max(1, Number(e.target.value)))}
+                  onChange={(n) => set("intervalMonths", n)}
                   className="w-16 rounded-[var(--radius-control)] border border-border bg-surface px-2 py-1.5"
                 />
                 <span>month(s)</span>
@@ -380,12 +377,11 @@ export function TaskForm({ task, defaultAreaId }: { task?: TaskDto; defaultAreaI
                     </option>
                   ))}
                 </select>
-                <input
-                  type="number"
+                <NumberInput
                   min={1}
                   max={31}
                   value={state.annualDay}
-                  onChange={(e) => set("annualDay", Math.min(31, Math.max(1, Number(e.target.value))))}
+                  onChange={(n) => set("annualDay", n)}
                   className="w-16 rounded-[var(--radius-control)] border border-border bg-surface px-2 py-1.5"
                 />
               </div>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { mutate as globalMutate } from "swr";
 import { useSettings } from "@/hooks/use-household-data";
 import { patchJson } from "@/lib/client/fetcher";
+import { NumberInput } from "@/components/number-input";
 
 function revalidate() {
   return globalMutate((key) => typeof key === "string" && key.startsWith("/api/"), undefined, { revalidate: true });
@@ -54,12 +55,11 @@ export function DisplaySettingsForm() {
       <label className="block">
         <span className="mb-1 block text-sm font-bold">Idle timeout before screensaver</span>
         <div className="flex items-center gap-2 text-sm">
-          <input
-            type="number"
+          <NumberInput
             min={15}
             max={3600}
             value={idleTimeoutSeconds}
-            onChange={(e) => setIdleTimeoutSeconds(Number(e.target.value))}
+            onChange={setIdleTimeoutSeconds}
             className="w-24 rounded-[var(--radius-control)] border border-border bg-surface-alt px-3 py-2"
           />
           <span className="text-text-muted">seconds</span>

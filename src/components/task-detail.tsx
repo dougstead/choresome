@@ -18,6 +18,7 @@ import { fetcher, patchJson, postJson } from "@/lib/client/fetcher";
 import { mutate as globalMutate } from "swr";
 import type { TaskDto } from "@/lib/api/types";
 import type { TaskStats } from "@/lib/services/stats-service";
+import { NumberInput } from "./number-input";
 
 export function TaskDetail({
   task: initialTask,
@@ -146,12 +147,11 @@ export function TaskDetail({
           </button>
           <div className="flex items-center gap-2 rounded-full border-2 border-border py-1.5 pl-4 pr-1.5">
             <span className="text-sm font-bold text-text-muted">Snooze for</span>
-            <input
-              type="number"
+            <NumberInput
               min={1}
               max={365}
               value={snoozeDays}
-              onChange={(e) => setSnoozeDays(Math.min(365, Math.max(1, Number(e.target.value) || 1)))}
+              onChange={setSnoozeDays}
               aria-label="Days to snooze"
               className="w-12 rounded-full bg-surface-alt px-2 py-1 text-center text-sm font-bold"
             />

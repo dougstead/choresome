@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { mutate as globalMutate } from "swr";
 import { useSettings } from "@/hooks/use-household-data";
 import { patchJson } from "@/lib/client/fetcher";
+import { NumberInput } from "@/components/number-input";
 
 const DATE_FORMATS = ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", "DD MMM YYYY"];
 
@@ -126,12 +127,11 @@ export function HouseholdForm() {
       <label className="block">
         <span className="mb-1 block text-sm font-bold">&ldquo;Coming up&rdquo; window</span>
         <div className="flex items-center gap-2 text-sm">
-          <input
-            type="number"
+          <NumberInput
             min={1}
             max={30}
             value={upcomingWindowDays}
-            onChange={(e) => setUpcomingWindowDays(Number(e.target.value))}
+            onChange={setUpcomingWindowDays}
             className="w-20 rounded-[var(--radius-control)] border border-border bg-surface-alt px-3 py-2"
           />
           <span className="text-text-muted">days ahead</span>

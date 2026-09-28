@@ -13,6 +13,7 @@ export default async function DisplayPage() {
       upcomingWindowDays={settings.upcomingWindowDays}
       householdName={settings.name}
       timeFormat={settings.timeFormat}
+      dateFormat={settings.dateFormat}
       displayConfig={settings.displayConfig}
       holidayMode={settings.holidayMode}
     />

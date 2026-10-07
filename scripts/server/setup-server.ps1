@@ -57,8 +57,11 @@ $appAction = New-ScheduledTaskAction `
 
 $appTrigger = New-ScheduledTaskTrigger -AtStartup
 
+# ExecutionTimeLimit defaults to 72 hours, after which Task Scheduler kills
+# the task -- fatal for a long-running server. Zero means "no limit".
 $appSettings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
     -RestartCount 5 `
     -RestartInterval (New-TimeSpan -Minutes 1)
 
@@ -84,6 +87,7 @@ $caddyTrigger = New-ScheduledTaskTrigger -AtStartup
 
 $caddySettings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
     -RestartCount 5 `
     -RestartInterval (New-TimeSpan -Minutes 1)
 

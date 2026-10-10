@@ -127,6 +127,28 @@ Operator commands (`scripts/admin.ts`):
 - `npm run admin -- claim-household --household <id> --email <email>`
 - `npm run admin -- reset-link --email <email>` prints a reset link, for when SMTP isn't configured.
 
+### On the mini PC, next to the household instance
+
+The hosted service lives in `C:\Apps\hosted-choresome` on port 3011. It has
+its own scheduled task ("Choresome Hosted") and PostgreSQL 17 (a Windows
+service, localhost only). The LAN household instance (`C:\Apps\choresome`,
+port 3010) is untouched. The folder name deliberately doesn't start with
+`C:\Apps\choresome`, because the household deploy script's leftover-process
+sweep matches on that prefix.
+
+```powershell
+git clone -b explore/saas https://github.com/dougstead/choresome.git C:\Apps\hosted-choresome
+cd C:\Apps\hosted-choresome
+powershell -ExecutionPolicy Bypass -File scripts\server\hosted\setup-hosted.ps1    # once, as admin
+powershell -ExecutionPolicy Bypass -File scripts\server\hosted\deploy-hosted.ps1   # every update
+```
+
+Port 3011 is deliberately **not** opened in Windows Firewall. Public traffic
+comes in through Cloudflare Tunnel (`cloudflared` → `http://localhost:3011`).
+Once the domain is live, set `APP_URL=https://your-domain` in
+`C:\Apps\hosted-choresome\.env.hosted` and restart the task. Cookies then
+become `Secure`, and invite and reset links use the domain.
+
 For a public deployment, put it behind a TLS-terminating reverse proxy, set
 `APP_URL=https://…` (this makes cookies `Secure` automatically) and
 `TRUST_PROXY=true`, and add an HSTS header at the proxy.

@@ -39,7 +39,13 @@ function New-Secret {
 function Protect-File([string]$Path) {
     $acl = New-Object System.Security.AccessControl.FileSecurity
     $acl.SetAccessRuleProtection($true, $false)
-    foreach ($identity in @("$env:USERDOMAIN\$env:USERNAME", "NT AUTHORITY\SYSTEM", "BUILTIN\Administrators")) {
+    # SIDs rather than names: account names don't always resolve (e.g. in an SSH session).
+    $identities = @(
+        [System.Security.Principal.WindowsIdentity]::GetCurrent().User,
+        (New-Object System.Security.Principal.SecurityIdentifier("S-1-5-18")),     # SYSTEM
+        (New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544"))  # Administrators
+    )
+    foreach ($identity in $identities) {
         $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, "FullControl", "Allow")
         $acl.AddAccessRule($rule)
     }
@@ -64,9 +70,9 @@ if (-not (Test-Path $SecretsFile)) {
         "PG_SUPERUSER_PASSWORD=`"$(New-Secret)`"",
         "PG_APP_PASSWORD=`"$(New-Secret)`""
     ) | Set-Content -Path $SecretsFile -Encoding ascii
-    Protect-File $SecretsFile
     Write-Host "Generated database passwords in $SecretsFile."
 }
+Protect-File $SecretsFile
 $SuperPassword = Read-EnvValue $SecretsFile "PG_SUPERUSER_PASSWORD"
 $AppPassword = Read-EnvValue $SecretsFile "PG_APP_PASSWORD"
 
@@ -132,11 +138,11 @@ if (-not (Test-Path $EnvFile)) {
         "BACKUP_INTERVAL_HOURS=24",
         "BACKUP_RETENTION=14"
     ) | Set-Content -Path $EnvFile -Encoding ascii
-    Protect-File $EnvFile
     Write-Host "Wrote $EnvFile."
 } else {
     Write-Host "$EnvFile already exists; leaving it as is."
 }
+Protect-File $EnvFile
 
 # -----------------------------
 # 3. Startup task

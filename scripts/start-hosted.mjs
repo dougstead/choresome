@@ -35,7 +35,10 @@ if (migrate.status !== 0) {
 }
 
 console.log(`Starting Choresome on port ${port}...`);
-const server = spawn(process.execPath, [path.join(root, "node_modules/next/dist/bin/next"), "start", "-p", port], {
+// HOST=127.0.0.1 keeps the app off the network entirely (e.g. when a tunnel or
+// reverse proxy on the same machine is the only way in).
+const hostArgs = process.env.HOST ? ["-H", process.env.HOST] : [];
+const server = spawn(process.execPath, [path.join(root, "node_modules/next/dist/bin/next"), "start", "-p", port, ...hostArgs], {
   cwd: root,
   stdio: "inherit",
   env: process.env,

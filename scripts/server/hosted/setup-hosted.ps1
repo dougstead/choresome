@@ -147,6 +147,12 @@ if (-not (Test-Path $EnvFile)) {
 } else {
     Write-Host "$EnvFile already exists; leaving it as is."
 }
+# Bind to loopback only, so nothing but local processes (cloudflared) can
+# connect -- regardless of firewall state. Added to older env files too.
+if (-not (Get-Content $EnvFile | Where-Object { $_ -match "^HOST=" })) {
+    Add-Content -Path $EnvFile -Value "HOST=127.0.0.1" -Encoding ascii
+    Write-Host "Bound the app to 127.0.0.1."
+}
 Protect-File $EnvFile
 
 # -----------------------------

@@ -144,7 +144,7 @@ powershell -ExecutionPolicy Bypass -File scripts\server\hosted\deploy-hosted.ps1
 ```
 
 Port 3011 is deliberately **not** opened in Windows Firewall. Public traffic
-comes in through Cloudflare Tunnel (`cloudflared` → `http://localhost:3011`).
+comes in through Cloudflare Tunnel (`cloudflared` → `http://127.0.0.1:3011`; the app binds to loopback only).
 Once the domain is live, set `APP_URL=https://your-domain` in
 `C:\Apps\hosted-choresome\.env.hosted` and restart the task. Cookies then
 become `Secure`, and invite and reset links use the domain.

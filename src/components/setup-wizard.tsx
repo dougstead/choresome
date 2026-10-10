@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { postJson } from "@/lib/client/fetcher";
 import { setPreferredMemberId } from "@/lib/client/member-preference";
+import { hardNavigate } from "@/lib/client/navigate";
 
 const DEFAULT_AREAS = [
   { name: "Kitchen", icon: "🍳" },
@@ -35,13 +35,18 @@ function timezoneOptions(): string[] {
   return ["Europe/London", "Europe/Dublin", "America/New_York", "America/Chicago", "America/Los_Angeles", "Australia/Sydney"];
 }
 
-export function SetupWizard({ defaultTimezone }: { defaultTimezone: string }) {
-  const router = useRouter();
+export function SetupWizard({ userName }: { userName: string }) {
   const timezones = useMemo(() => timezoneOptions(), []);
 
   const [householdName, setHouseholdName] = useState("Our Household");
-  const [timezone, setTimezone] = useState(defaultTimezone || detectTimezone());
-  const [members, setMembers] = useState([{ name: "", icon: MEMBER_ICONS[0] }, { name: "", icon: MEMBER_ICONS[2] }]);
+  const [timezone, setTimezone] = useState("Europe/London");
+  const [members, setMembers] = useState([{ name: userName, icon: MEMBER_ICONS[0] }, { name: "", icon: MEMBER_ICONS[2] }]);
+
+  // The browser's own timezone is the best default, but it's only knowable client-side.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTimezone(detectTimezone());
+  }, []);
   const [selectedAreas, setSelectedAreas] = useState<Set<string>>(new Set(DEFAULT_AREAS.map((a) => a.name)));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,8 +90,8 @@ export function SetupWizard({ defaultTimezone }: { defaultTimezone: string }) {
       });
       // Best-effort: remember the first member as this device's default, editable later in Settings.
       if (result.members[0]) setPreferredMemberId(result.members[0].id);
-      router.replace("/");
-      router.refresh();
+      // A full navigation, so every server-rendered bit (theme, household name) reflects the new household.
+      hardNavigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -129,6 +134,10 @@ export function SetupWizard({ defaultTimezone }: { defaultTimezone: string }) {
 
       <div>
         <span className="mb-1.5 block text-sm font-bold">Household members</span>
+        <p className="mb-2 text-xs text-text-muted">
+          Everyone chores get credited to &mdash; including people who won&rsquo;t have their own login, like kids.
+          You can invite others to sign in later from Settings.
+        </p>
         <div className="space-y-2">
           {members.map((member, index) => (
             <div key={index} className="flex items-center gap-2">

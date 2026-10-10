@@ -5,6 +5,7 @@ import { NotificationPoller } from "@/components/notification-poller";
 import { OfflineBanner } from "@/components/offline-banner";
 import { RegisterServiceWorker } from "@/components/register-service-worker";
 import { UndoToastProvider } from "@/components/undo-toast-provider";
+import { getAuth } from "@/lib/auth/context";
 import { getHouseholdSettings } from "@/lib/services/settings-service";
 import "./globals.css";
 
@@ -47,14 +48,17 @@ export const viewport: Viewport = {
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const settings = await getHouseholdSettings().catch(() => null);
+  // Signed-out pages (login, sign-up) have no household, so fall back to the system theme.
+  const auth = await getAuth();
+  const settings = auth?.householdId ? await getHouseholdSettings(auth.householdId).catch(() => null) : null;
   const theme = settings?.theme.toLowerCase() ?? "system";
 
   return (
     <html lang="en" data-theme={theme} className={`${nunito.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-bg text-text">
         <RegisterServiceWorker />
-        <NotificationPoller />
+        {/* Reminders need a household; signed-out pages (login, sign-up) must not poll the API. */}
+        {settings ? <NotificationPoller /> : null}
         <OfflineBanner />
         <UndoToastProvider>{children}</UndoToastProvider>
       </body>

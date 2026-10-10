@@ -4,10 +4,12 @@ import { ArrowLeftIcon } from "@/components/icons";
 import { TaskForm } from "@/components/task-form";
 import { serializeTask } from "@/lib/api/serialize-task";
 import { getTaskById } from "@/lib/services/task-service";
+import { requirePageHousehold } from "@/lib/auth/context";
 
 export default async function EditTaskPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const task = await getTaskById(id);
+  const { householdId } = await requirePageHousehold();
+  const task = await getTaskById(householdId, id);
   if (!task) notFound();
 
   return (

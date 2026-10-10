@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/db";
-import { resetDb } from "@/lib/test/reset-db";
+import { createTestHousehold, resetDb } from "@/lib/test/reset-db";
 import { utcDateToCalendarDate } from "@/lib/dates";
 import { createTask } from "./task-service";
 import { setHolidayMode } from "./holiday-service";
@@ -8,27 +8,29 @@ import { getHouseholdSettings } from "./settings-service";
 import type { CompletionRelativeRule, FixedCalendarRule } from "@/lib/recurrence";
 
 async function seed() {
-  await getHouseholdSettings();
-  const area = await prisma.area.create({ data: { name: "Kitchen" } });
+  const area = await prisma.area.create({ data: { householdId: hid, name: "Kitchen" } });
   return { area };
 }
 
+let hid: number;
+
 beforeEach(async () => {
   await resetDb();
+  hid = await createTestHousehold();
 });
 
 describe("setHolidayMode", () => {
   it("turning it on just records the start time -- it doesn't touch any task", async () => {
     const { area } = await seed();
     const rule: CompletionRelativeRule = { type: "COMPLETION_RELATIVE", intervalValue: 3, intervalUnit: "days" };
-    const task = await createTask({ name: "Water plants", areaId: area.id, recurrenceRule: rule });
+    const task = await createTask(hid, { name: "Water plants", areaId: area.id, recurrenceRule: rule });
     const dueBefore = task.dueDate.getTime();
 
-    const result = await setHolidayMode(true);
+    const result = await setHolidayMode(hid, true);
     expect(result.holidayMode).toBe(true);
     expect(result.holidayStartedAt).not.toBeNull();
 
-    const settings = await getHouseholdSettings();
+    const settings = await getHouseholdSettings(hid);
     expect(settings.holidayMode).toBe(true);
 
     const unchanged = await prisma.task.findUniqueOrThrow({ where: { id: task.id } });
@@ -38,10 +40,10 @@ describe("setHolidayMode", () => {
   it("is idempotent -- turning it on again keeps the original start date", async () => {
     await seed();
     vi.setSystemTime(new Date("2026-09-10T08:00:00.000Z"));
-    const first = await setHolidayMode(true);
+    const first = await setHolidayMode(hid, true);
 
     vi.setSystemTime(new Date("2026-09-15T08:00:00.000Z"));
-    const second = await setHolidayMode(true);
+    const second = await setHolidayMode(hid, true);
 
     expect(second.holidayStartedAt?.toISOString()).toBe(first.holidayStartedAt?.toISOString());
     vi.useRealTimers();
@@ -56,28 +58,28 @@ describe("setHolidayMode", () => {
     };
 
     vi.setSystemTime(new Date("2026-09-10T08:00:00.000Z")); // a Thursday
-    const notYetDue = await createTask({ name: "Water plants", areaId: area.id, recurrenceRule: relative });
-    const bins = await createTask({ name: "Bins", areaId: area.id, recurrenceRule: fixed });
+    const notYetDue = await createTask(hid, { name: "Water plants", areaId: area.id, recurrenceRule: relative });
+    const bins = await createTask(hid, { name: "Bins", areaId: area.id, recurrenceRule: fixed });
 
     // Something already overdue before the holiday even starts -- it should
     // stay exactly as overdue afterwards, not get a free pass.
-    const overdueAlready = await createTask({ name: "Descale kettle", areaId: area.id, recurrenceRule: relative });
+    const overdueAlready = await createTask(hid, { name: "Descale kettle", areaId: area.id, recurrenceRule: relative });
     await prisma.task.update({
       where: { id: overdueAlready.id },
       data: { dueDate: new Date("2026-09-05T00:00:00.000Z") },
     });
 
-    await setHolidayMode(true);
+    await setHolidayMode(hid, true);
 
     // 10 days pass while away.
     vi.setSystemTime(new Date("2026-09-20T08:00:00.000Z"));
-    const result = await setHolidayMode(false);
+    const result = await setHolidayMode(hid, false);
 
     expect(result.holidayMode).toBe(false);
     expect(result.daysPaused).toBe(10);
     expect(result.tasksShifted).toBe(3);
 
-    const settings = await getHouseholdSettings();
+    const settings = await getHouseholdSettings(hid);
     expect(settings.holidayMode).toBe(false);
     expect(settings.holidayStartedAt).toBeNull();
 
@@ -106,13 +108,13 @@ describe("setHolidayMode", () => {
       pattern: { pattern: "weekly", weekdays: [2], intervalWeeks: 1, anchorDate: { year: 2026, month: 9, day: 8 } },
     };
     vi.setSystemTime(new Date("2026-09-10T08:00:00.000Z"));
-    const bins = await createTask({ name: "Bins", areaId: area.id, recurrenceRule: fixed });
+    const bins = await createTask(hid, { name: "Bins", areaId: area.id, recurrenceRule: fixed });
     // Pretend last Tuesday's bins were also missed, before the holiday even started.
     await prisma.task.update({ where: { id: bins.id }, data: { dueDate: new Date("2026-09-01T00:00:00.000Z") } });
 
-    await setHolidayMode(true);
+    await setHolidayMode(hid, true);
     vi.setSystemTime(new Date("2026-09-20T08:00:00.000Z"));
-    await setHolidayMode(false);
+    await setHolidayMode(hid, false);
 
     const updated = await prisma.task.findUniqueOrThrow({ where: { id: bins.id } });
     expect(utcDateToCalendarDate(updated.dueDate)).toEqual({ year: 2026, month: 9, day: 22 });
@@ -121,11 +123,11 @@ describe("setHolidayMode", () => {
 
   it("does nothing if turned off the same day it started, or if it was never on", async () => {
     await seed();
-    const neverOn = await setHolidayMode(false);
+    const neverOn = await setHolidayMode(hid, false);
     expect(neverOn).toEqual({ holidayMode: false, holidayStartedAt: null, daysPaused: 0, tasksShifted: 0 });
 
-    await setHolidayMode(true);
-    const sameDay = await setHolidayMode(false);
+    await setHolidayMode(hid, true);
+    const sameDay = await setHolidayMode(hid, false);
     expect(sameDay.daysPaused).toBe(0);
     expect(sameDay.tasksShifted).toBe(0);
   });

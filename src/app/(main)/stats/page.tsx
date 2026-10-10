@@ -1,5 +1,6 @@
 import { formatRelativeTime } from "@/lib/format";
 import { getHouseholdStats } from "@/lib/services/stats-service";
+import { requirePageHousehold } from "@/lib/auth/context";
 
 function Tile({ label, value }: { label: string; value: number }) {
   return (
@@ -11,7 +12,8 @@ function Tile({ label, value }: { label: string; value: number }) {
 }
 
 export default async function StatsPage() {
-  const stats = await getHouseholdStats();
+  const { householdId } = await requirePageHousehold();
+  const stats = await getHouseholdStats(householdId);
   const maxPerson = Math.max(1, ...stats.completionsByPerson.map((p) => p.count));
   const maxArea = Math.max(1, ...stats.completionsByArea.map((a) => a.count));
 

@@ -5,10 +5,12 @@ import { AreaTaskList } from "@/components/area-task-list";
 import { householdTodayIso } from "@/lib/household-clock";
 import { listAreas } from "@/lib/services/area-service";
 import { getHouseholdSettings } from "@/lib/services/settings-service";
+import { requirePageHousehold } from "@/lib/auth/context";
 
 export default async function AreaDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [areas, settings] = await Promise.all([listAreas({ includeArchived: true }), getHouseholdSettings()]);
+  const { householdId } = await requirePageHousehold();
+  const [areas, settings] = await Promise.all([listAreas(householdId, { includeArchived: true }), getHouseholdSettings(householdId)]);
   const area = areas.find((a) => a.id === id);
   if (!area) notFound();
 

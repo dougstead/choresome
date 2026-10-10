@@ -4,8 +4,20 @@
     {
       "name": "choresome-dev",
       "runtimeExecutable": "C:\\Users\\dugst\\AppData\\Roaming\\fnm\\node-versions\\v24.19.0\\installation\\node.exe",
-      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev"],
+      "runtimeArgs": [
+        "node_modules/next/dist/bin/next",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "choresome-hosted",
+      "runtimeExecutable": "C:\\Users\\dugst\\AppData\\Roaming\\fnm\\node-versions\\v24.19.0\\installation\\node.exe",
+      "runtimeArgs": [
+        "--env-file=.env.hosted.local",
+        "scripts/start-hosted.mjs"
+      ],
+      "port": 3020
     }
   ]
 }

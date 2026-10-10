@@ -9,10 +9,10 @@ const householdExportSchema = z.object({
   timeFormat: z.string(),
   upcomingWindowDays: z.number(),
   reminderDefaults: z.string(),
-  backupDir: z.string().nullable(),
-  backupRetention: z.number(),
-  backupIntervalHours: z.number(),
   displayConfig: z.string(),
+  // Defaulted so exports taken before Holiday mode existed still import cleanly.
+  holidayMode: z.boolean().default(false),
+  holidayStartedAt: z.coerce.date().nullable().default(null),
   setupCompleted: z.boolean(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),

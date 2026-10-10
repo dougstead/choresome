@@ -6,6 +6,8 @@ import type { RecordCompletionInput, UpdateCompletionInput } from "@/lib/validat
 import { getHouseholdSettings } from "./settings-service";
 import { getJointMember } from "./member-service";
 import { dueDateForNewOrEditedRule } from "./scheduling";
+import { assertMemberInHousehold, findTaskOrThrow } from "./tenant";
+import { notFound } from "@/lib/auth/errors";
 
 // Default dedup window for manual completion (dashboard/task-detail double-tap protection).
 const DUPLICATE_TAP_WINDOW_MS = 5_000;
@@ -15,12 +17,12 @@ const DUPLICATE_TAP_WINDOW_MS = 5_000;
 export const NFC_DEDUPE_WINDOW_MS = 60_000;
 
 /** Recomputes a completion-relative task's due date from whichever completion is now chronologically latest. Safe to call unconditionally after any create/edit/delete. */
-async function recalculateCompletionRelativeDueDate(taskId: string) {
-  const task = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
+async function recalculateCompletionRelativeDueDate(householdId: number, taskId: string) {
+  const task = await findTaskOrThrow(householdId, taskId);
   const rule = parseRecurrenceRule(task.recurrenceConfig);
   if (rule.type !== "COMPLETION_RELATIVE") return task;
 
-  const settings = await getHouseholdSettings();
+  const settings = await getHouseholdSettings(householdId);
   const latest = await prisma.completionEvent.findFirst({ where: { taskId }, orderBy: { completedAt: "desc" } });
   const nextDue = dueDateForNewOrEditedRule({
     rule,
@@ -31,14 +33,16 @@ async function recalculateCompletionRelativeDueDate(taskId: string) {
 }
 
 export async function recordCompletion(
+  householdId: number,
   input: RecordCompletionInput,
   options: { dedupeWindowMs?: number } = {}
 ) {
   const dedupeWindowMs = options.dedupeWindowMs ?? DUPLICATE_TAP_WINDOW_MS;
-  const task = await prisma.task.findUniqueOrThrow({ where: { id: input.taskId } });
+  const task = await findTaskOrThrow(householdId, input.taskId);
   const completedAt = input.completedAt ?? new Date();
-  const memberId = input.joint ? (await getJointMember()).id : input.memberId;
+  const memberId = input.joint ? (await getJointMember(householdId)).id : input.memberId;
   if (!memberId) throw new Error("recordCompletion needs a memberId or joint: true");
+  if (!input.joint) await assertMemberInHousehold(householdId, memberId);
 
   const recentDuplicate = await prisma.completionEvent.findFirst({
     where: {
@@ -54,7 +58,7 @@ export async function recordCompletion(
   }
 
   const rule = parseRecurrenceRule(task.recurrenceConfig);
-  const settings = await getHouseholdSettings();
+  const settings = await getHouseholdSettings(householdId);
   const completedOn = instantToCalendarDate(completedAt, settings.timezone);
   const previousDueDate = utcDateToCalendarDate(task.dueDate);
   const nextDue = computeNextDueDate(rule, { completedOn, previousDueDate });
@@ -62,6 +66,7 @@ export async function recordCompletion(
   const [event, updatedTask] = await prisma.$transaction([
     prisma.completionEvent.create({
       data: {
+        householdId,
         taskId: input.taskId,
         memberId,
         completedAt,
@@ -76,8 +81,15 @@ export async function recordCompletion(
   return { event, task: updatedTask, duplicate: false as const };
 }
 
-export async function editCompletion(eventId: string, input: UpdateCompletionInput) {
-  const existing = await prisma.completionEvent.findUniqueOrThrow({ where: { id: eventId } });
+async function findCompletionOrThrow(householdId: number, eventId: string) {
+  const event = await prisma.completionEvent.findFirst({ where: { id: eventId, householdId } });
+  if (!event) throw notFound("Completion not found");
+  return event;
+}
+
+export async function editCompletion(householdId: number, eventId: string, input: UpdateCompletionInput) {
+  const existing = await findCompletionOrThrow(householdId, eventId);
+  if (input.memberId !== undefined) await assertMemberInHousehold(householdId, input.memberId);
 
   const event = await prisma.completionEvent.update({
     where: { id: eventId },
@@ -91,13 +103,13 @@ export async function editCompletion(eventId: string, input: UpdateCompletionInp
 
   // Fixed-calendar schedules are anchored to due dates, not completion timestamps,
   // so editing a completion's details never needs to change the task's due date.
-  await recalculateCompletionRelativeDueDate(existing.taskId);
+  await recalculateCompletionRelativeDueDate(householdId, existing.taskId);
 
   return event;
 }
 
-export async function deleteCompletion(eventId: string) {
-  const event = await prisma.completionEvent.findUniqueOrThrow({ where: { id: eventId } });
+export async function deleteCompletion(householdId: number, eventId: string) {
+  const event = await findCompletionOrThrow(householdId, eventId);
 
   const laterOrEqual = await prisma.completionEvent.findFirst({
     where: {
@@ -116,7 +128,7 @@ export async function deleteCompletion(eventId: string) {
   await prisma.completionEvent.delete({ where: { id: eventId } });
 
   if (rule.type === "COMPLETION_RELATIVE") {
-    const updatedTask = await recalculateCompletionRelativeDueDate(event.taskId);
+    const updatedTask = await recalculateCompletionRelativeDueDate(householdId, event.taskId);
     return { deletedEvent: event, task: updatedTask };
   }
 
@@ -139,10 +151,19 @@ export interface HistoryFilters {
   to?: Date;
 }
 
-export async function listHistory(filters: HistoryFilters, pagination: { cursor?: string; limit?: number } = {}) {
-  const limit = pagination.limit ?? 50;
+export async function listHistory(
+  householdId: number,
+  filters: HistoryFilters,
+  pagination: { cursor?: string; limit?: number } = {}
+) {
+  const limit = Math.min(Math.max(1, pagination.limit ?? 50), 200);
+  // A cursor id from another household would still be filtered out by
+  // householdId, but reject it so pagination can never be anchored on (and
+  // thereby probe for the existence of) someone else's row.
+  if (pagination.cursor) await findCompletionOrThrow(householdId, pagination.cursor);
   const events = await prisma.completionEvent.findMany({
     where: {
+      householdId,
       ...(filters.memberId ? { memberId: filters.memberId } : {}),
       ...(filters.taskId ? { taskId: filters.taskId } : {}),
       ...(filters.areaId ? { task: { areaId: filters.areaId } } : {}),

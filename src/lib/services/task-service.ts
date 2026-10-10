@@ -12,11 +12,13 @@ import { parseRecurrenceRule, serializeRecurrenceRule } from "@/lib/recurrence/s
 import { householdToday } from "@/lib/household-clock";
 import { getHouseholdSettings } from "./settings-service";
 import { dueDateForNewOrEditedRule } from "./scheduling";
+import { assertAreaInHousehold, assertMemberInHousehold, findTaskOrThrow } from "./tenant";
 import type { CreateTaskInput, UpdateTaskInput } from "@/lib/validation/task";
 
-export async function listTasks(options: { includeArchived?: boolean; areaId?: string } = {}) {
+export async function listTasks(householdId: number, options: { includeArchived?: boolean; areaId?: string } = {}) {
   return prisma.task.findMany({
     where: {
+      householdId,
       ...(options.includeArchived ? {} : { active: true }),
       ...(options.areaId ? { areaId: options.areaId } : {}),
     },
@@ -25,15 +27,17 @@ export async function listTasks(options: { includeArchived?: boolean; areaId?: s
   });
 }
 
-export async function getTaskById(id: string) {
-  return prisma.task.findUnique({
-    where: { id },
+export async function getTaskById(householdId: number, id: string) {
+  return prisma.task.findFirst({
+    where: { id, householdId },
     include: { area: true, defaultAssignee: true },
   });
 }
 
-export async function createTask(input: CreateTaskInput) {
-  const settings = await getHouseholdSettings();
+export async function createTask(householdId: number, input: CreateTaskInput) {
+  await assertAreaInHousehold(householdId, input.areaId);
+  if (input.defaultAssigneeId) await assertMemberInHousehold(householdId, input.defaultAssigneeId);
+  const settings = await getHouseholdSettings(householdId);
   const today = householdToday(settings);
   const startFrom: CalendarDate = input.startDate ?? today;
   const dueDate = dueDateForNewOrEditedRule({
@@ -45,6 +49,7 @@ export async function createTask(input: CreateTaskInput) {
 
   return prisma.task.create({
     data: {
+      householdId,
       name: input.name,
       description: input.description,
       areaId: input.areaId,
@@ -62,14 +67,16 @@ export async function createTask(input: CreateTaskInput) {
   });
 }
 
-export async function updateTask(id: string, input: UpdateTaskInput) {
-  const task = await prisma.task.findUniqueOrThrow({ where: { id } });
+export async function updateTask(householdId: number, id: string, input: UpdateTaskInput) {
+  const task = await findTaskOrThrow(householdId, id);
+  if (input.areaId !== undefined) await assertAreaInHousehold(householdId, input.areaId);
+  if (input.defaultAssigneeId) await assertMemberInHousehold(householdId, input.defaultAssigneeId);
 
   let dueDateUpdate: Date | undefined;
   let recurrenceUpdate: ReturnType<typeof serializeRecurrenceRule> | undefined;
 
   if (input.recurrenceRule) {
-    const settings = await getHouseholdSettings();
+    const settings = await getHouseholdSettings(householdId);
     const today = householdToday(settings);
     const latest = await prisma.completionEvent.findFirst({
       where: { taskId: id },
@@ -105,11 +112,13 @@ export async function updateTask(id: string, input: UpdateTaskInput) {
   return prisma.task.update({ where: { id }, data, include: { area: true, defaultAssignee: true } });
 }
 
-export async function archiveTask(id: string) {
+export async function archiveTask(householdId: number, id: string) {
+  await findTaskOrThrow(householdId, id);
   return prisma.task.update({ where: { id }, data: { active: false, archivedAt: new Date() } });
 }
 
-export async function unarchiveTask(id: string) {
+export async function unarchiveTask(householdId: number, id: string) {
+  await findTaskOrThrow(householdId, id);
   return prisma.task.update({ where: { id }, data: { active: true, archivedAt: null } });
 }
 
@@ -118,9 +127,9 @@ export async function unarchiveTask(id: string) {
  * without recording a CompletionEvent, so nobody's credited and history
  * stays honest. "Reset the timer" for a chore nobody actually did.
  */
-export async function skipTask(id: string) {
-  const task = await prisma.task.findUniqueOrThrow({ where: { id } });
-  const settings = await getHouseholdSettings();
+export async function skipTask(householdId: number, id: string) {
+  const task = await findTaskOrThrow(householdId, id);
+  const settings = await getHouseholdSettings(householdId);
   const rule = parseRecurrenceRule(task.recurrenceConfig);
   const today = householdToday(settings);
   const previousDueDate = utcDateToCalendarDate(task.dueDate);
@@ -139,8 +148,9 @@ export async function skipTask(id: string) {
  * not "N days after it was already due"). A temporary postponement, unlike
  * `skipTask`: it ignores the recurrence rule entirely.
  */
-export async function snoozeTask(id: string, days: number) {
-  const settings = await getHouseholdSettings();
+export async function snoozeTask(householdId: number, id: string, days: number) {
+  await findTaskOrThrow(householdId, id);
+  const settings = await getHouseholdSettings(householdId);
   const newDueDate = addDays(householdToday(settings), days);
 
   return prisma.task.update({

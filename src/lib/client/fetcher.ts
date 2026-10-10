@@ -1,3 +1,5 @@
+import { hardNavigate } from "./navigate";
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -8,40 +10,51 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A 401 means the session expired or was revoked (signed out elsewhere,
+ * password changed). Send the browser to sign in, then straight back here --
+ * important for the always-on wall display, which would otherwise just show
+ * stale data forever.
+ */
+const SIGNED_OUT_PAGES = ["/login", "/signup", "/forgot-password", "/reset-password", "/invite"];
+
+function redirectToLoginIfSignedOut(status: number) {
+  if (status !== 401 || typeof window === "undefined") return;
+  const { pathname, search } = window.location;
+  if (SIGNED_OUT_PAGES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return;
+  const here = `${pathname}${search}`;
+  hardNavigate(`/login?next=${encodeURIComponent(here)}`);
+}
+
+async function toApiError(res: Response): Promise<ApiError> {
+  const body = await res.json().catch(() => ({ error: res.statusText }));
+  redirectToLoginIfSignedOut(res.status);
+  return new ApiError(body.error ?? "Request failed", res.status, body.code);
+}
+
 export async function fetcher<T = unknown>(url: string): Promise<T> {
   const res = await fetch(url);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(body.error ?? "Request failed", res.status, body.code);
-  }
+  if (!res.ok) throw await toApiError(res);
   return res.json();
 }
 
-export async function postJson<T = unknown>(url: string, body: unknown): Promise<T> {
+async function sendJson<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    method,
+    ...(body !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? "Request failed", res.status, data.code);
-  return data as T;
+  if (!res.ok) throw await toApiError(res);
+  return (await res.json().catch(() => ({}))) as T;
 }
 
-export async function patchJson<T = unknown>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? "Request failed", res.status);
-  return data as T;
+export function postJson<T = unknown>(url: string, body: unknown): Promise<T> {
+  return sendJson<T>("POST", url, body);
 }
 
-export async function deleteJson<T = unknown>(url: string): Promise<T> {
-  const res = await fetch(url, { method: "DELETE" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? "Request failed", res.status);
-  return data as T;
+export function patchJson<T = unknown>(url: string, body: unknown): Promise<T> {
+  return sendJson<T>("PATCH", url, body);
+}
+
+export function deleteJson<T = unknown>(url: string, body?: unknown): Promise<T> {
+  return sendJson<T>("DELETE", url, body);
 }

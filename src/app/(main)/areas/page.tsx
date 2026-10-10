@@ -6,9 +6,15 @@ import { listAreas } from "@/lib/services/area-service";
 import { listTasks } from "@/lib/services/task-service";
 import { getHouseholdSettings } from "@/lib/services/settings-service";
 import { serializeTask } from "@/lib/api/serialize-task";
+import { requirePageHousehold } from "@/lib/auth/context";
 
 export default async function AreasPage() {
-  const [areas, tasks, settings] = await Promise.all([listAreas(), listTasks(), getHouseholdSettings()]);
+  const { householdId } = await requirePageHousehold();
+  const [areas, tasks, settings] = await Promise.all([
+    listAreas(householdId),
+    listTasks(householdId),
+    getHouseholdSettings(householdId),
+  ]);
   const todayIso = householdTodayIso(settings);
 
   const tasksByArea = new Map<string, ReturnType<typeof serializeTask>[]>();

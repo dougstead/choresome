@@ -4,8 +4,6 @@ import { initialDueDate } from "@/lib/recurrence";
 import { parseRecurrenceRule } from "@/lib/recurrence/serialize";
 import { getHouseholdSettings } from "./settings-service";
 
-const HOUSEHOLD_ID = 1;
-
 export interface HolidayModeResult {
   holidayMode: boolean;
   holidayStartedAt: Date | null;
@@ -37,8 +35,8 @@ export interface HolidayModeResult {
  *    same "anchored to the calendar, not to personal neglect" behaviour
  *    fixed-calendar tasks already have outside Holiday mode.
  */
-export async function setHolidayMode(enabled: boolean): Promise<HolidayModeResult> {
-  const settings = await getHouseholdSettings();
+export async function setHolidayMode(householdId: number, enabled: boolean): Promise<HolidayModeResult> {
+  const settings = await getHouseholdSettings(householdId);
 
   if (enabled) {
     if (settings.holidayMode) {
@@ -46,7 +44,7 @@ export async function setHolidayMode(enabled: boolean): Promise<HolidayModeResul
       return { holidayMode: true, holidayStartedAt: settings.holidayStartedAt, daysPaused: 0, tasksShifted: 0 };
     }
     const startedAt = new Date();
-    await prisma.household.update({ where: { id: HOUSEHOLD_ID }, data: { holidayMode: true, holidayStartedAt: startedAt } });
+    await prisma.household.update({ where: { id: householdId }, data: { holidayMode: true, holidayStartedAt: startedAt } });
     return { holidayMode: true, holidayStartedAt: startedAt, daysPaused: 0, tasksShifted: 0 };
   }
 
@@ -62,7 +60,7 @@ export async function setHolidayMode(enabled: boolean): Promise<HolidayModeResul
     let shifted = 0;
     if (daysPaused > 0) {
       const activeTasks = await tx.task.findMany({
-        where: { active: true },
+        where: { householdId, active: true },
         select: { id: true, dueDate: true, recurrenceConfig: true },
       });
       for (const task of activeTasks) {
@@ -75,7 +73,7 @@ export async function setHolidayMode(enabled: boolean): Promise<HolidayModeResul
       }
       shifted = activeTasks.length;
     }
-    await tx.household.update({ where: { id: HOUSEHOLD_ID }, data: { holidayMode: false, holidayStartedAt: null } });
+    await tx.household.update({ where: { id: householdId }, data: { holidayMode: false, holidayStartedAt: null } });
     return shifted;
   });
 

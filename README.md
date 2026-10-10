@@ -9,6 +9,12 @@ forever: **what needs doing**, and **who actually did what, and when**. Every
 completion is a permanent, correctable record — nothing is ever silently
 overwritten.
 
+> **Branch `explore/saas`:** this branch turns Choresome into a hosted,
+> multi-household service: accounts, household invites, roles, and strict
+> per-household data isolation. The design, decisions and operator guide are
+> in [docs/multi-household.md](docs/multi-household.md). Most of this README
+> still describes the original single-household LAN deployment.
+
 ## Contents
 
 - [What it does](#what-it-does)
@@ -633,6 +639,10 @@ physical tag unless you're retiring it entirely.
 
 ## Security
 
+> On this branch, Choresome has real accounts, sessions, roles and
+> per-household isolation. See [docs/multi-household.md](docs/multi-household.md).
+> The rest of this section describes the original LAN-only build.
+
 Choresome has **no built-in authentication** — it's designed for a trusted
 home network only. **Do not expose it directly to the public internet**
 (no port-forwarding your router's port 3010 or 80 to it, no putting
@@ -715,11 +725,11 @@ these without a rewrite:
   `NotificationChannel` interface in `src/lib/notifications` exists
   specifically so a push-based channel can be added later without changing
   the decision logic (`computeDueNotifications`) at all.
-- **No authentication.** Fine for a trusted home network; see
+- **No authentication** *(addressed on the `explore/saas` branch)*. Fine for a trusted home network; see
   [Security](#security). Adding basic auth or a reverse-proxy login later
   wouldn't require changing the data model — `Member` (a household profile)
   is already a separate concept from "who is logged in".
-- **Single household.** The `Household` table is a singleton by design
+- **Single household** *(addressed on the `explore/saas` branch)*. The `Household` table is a singleton by design
   (`id` is always `1`). Multiple households would need a real tenancy model
   — not worth building until it's actually needed.
 - **No area reordering UI.** Areas can be created, renamed and archived;

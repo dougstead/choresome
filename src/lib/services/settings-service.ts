@@ -1,8 +1,7 @@
 import { prisma } from "@/lib/db";
-import { DEFAULT_REMINDER_CONFIG, reminderConfigSchema, type ReminderConfig } from "@/lib/validation/recurrence";
-import { DEFAULT_DISPLAY_CONFIG, displayConfigSchema, type DisplayConfig, type UpdateSettingsInput } from "@/lib/validation/settings";
-
-const HOUSEHOLD_ID = 1;
+import { notFound } from "@/lib/auth/errors";
+import { reminderConfigSchema, type ReminderConfig } from "@/lib/validation/recurrence";
+import { displayConfigSchema, type DisplayConfig, type UpdateSettingsInput } from "@/lib/validation/settings";
 
 export interface HouseholdSettings {
   id: number;
@@ -13,9 +12,6 @@ export interface HouseholdSettings {
   timeFormat: string;
   upcomingWindowDays: number;
   reminderDefaults: ReminderConfig;
-  backupDir: string | null;
-  backupRetention: number;
-  backupIntervalHours: number;
   displayConfig: DisplayConfig;
   holidayMode: boolean;
   holidayStartedAt: Date | null;
@@ -33,9 +29,6 @@ function parseHousehold(row: {
   timeFormat: string;
   upcomingWindowDays: number;
   reminderDefaults: string;
-  backupDir: string | null;
-  backupRetention: number;
-  backupIntervalHours: number;
   displayConfig: string;
   holidayMode: boolean;
   holidayStartedAt: Date | null;
@@ -51,25 +44,15 @@ function parseHousehold(row: {
   };
 }
 
-/** Fetches the household settings singleton, creating it with sensible defaults on first run. */
-export async function getHouseholdSettings(): Promise<HouseholdSettings> {
-  const row = await prisma.household.upsert({
-    where: { id: HOUSEHOLD_ID },
-    update: {},
-    create: {
-      id: HOUSEHOLD_ID,
-      name: "Our Household",
-      reminderDefaults: JSON.stringify(DEFAULT_REMINDER_CONFIG),
-      displayConfig: JSON.stringify(DEFAULT_DISPLAY_CONFIG),
-    },
-  });
+export async function getHouseholdSettings(householdId: number): Promise<HouseholdSettings> {
+  const row = await prisma.household.findUnique({ where: { id: householdId } });
+  if (!row) throw notFound("Household not found");
   return parseHousehold(row);
 }
 
-export async function updateHouseholdSettings(input: UpdateSettingsInput): Promise<HouseholdSettings> {
-  await getHouseholdSettings(); // ensure the row exists
+export async function updateHouseholdSettings(householdId: number, input: UpdateSettingsInput): Promise<HouseholdSettings> {
   const row = await prisma.household.update({
-    where: { id: HOUSEHOLD_ID },
+    where: { id: householdId },
     data: {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.timezone !== undefined ? { timezone: input.timezone } : {}),
@@ -78,11 +61,7 @@ export async function updateHouseholdSettings(input: UpdateSettingsInput): Promi
       ...(input.timeFormat !== undefined ? { timeFormat: input.timeFormat } : {}),
       ...(input.upcomingWindowDays !== undefined ? { upcomingWindowDays: input.upcomingWindowDays } : {}),
       ...(input.reminderDefaults !== undefined ? { reminderDefaults: JSON.stringify(input.reminderDefaults) } : {}),
-      ...(input.backupDir !== undefined ? { backupDir: input.backupDir } : {}),
-      ...(input.backupRetention !== undefined ? { backupRetention: input.backupRetention } : {}),
-      ...(input.backupIntervalHours !== undefined ? { backupIntervalHours: input.backupIntervalHours } : {}),
       ...(input.displayConfig !== undefined ? { displayConfig: JSON.stringify(input.displayConfig) } : {}),
-      ...(input.setupCompleted !== undefined ? { setupCompleted: input.setupCompleted } : {}),
     },
   });
   return parseHousehold(row);

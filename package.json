@@ -11,12 +11,14 @@
     "test:watch": "vitest",
     "db:seed": "tsx prisma/seed.ts",
     "backup:run": "tsx scripts/run-backup.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "admin": "tsx scripts/admin.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "nanoid": "^6.0.1",
     "next": "16.3.6",
+    "nodemailer": "^7.0.13",
     "prisma": "^6.19.3",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
@@ -27,6 +29,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.13.6",
+    "@types/nodemailer": "^8.0.2",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",

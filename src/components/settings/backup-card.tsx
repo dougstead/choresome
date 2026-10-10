@@ -40,8 +40,8 @@ export function BackupCard() {
       <h2 className="text-sm font-extrabold uppercase tracking-wide text-text-muted">Backup &amp; restore</h2>
       <p className="text-xs text-text-muted">
         Export everything (members, areas, tasks and full completion history) as a JSON file you can keep safe, or
-        restore from a previous export. The mini PC also keeps automatic timestamped database backups — see the README
-        for where to find them.
+        restore from a previous export (household owners only). Restoring replaces this household&rsquo;s data and never
+        touches anyone else&rsquo;s.
       </p>
       <div className="flex gap-2">
         <a

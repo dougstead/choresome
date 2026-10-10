@@ -1,8 +1,12 @@
 // Choresome data model.
 //
 // Design notes:
-// - Single-household singleton (see Household, id fixed to 1). Not multi-tenant;
-//   easy to extend later without reshaping existing tables.
+// - Multi-household: every household-owned row (Member, Area, Task, NfcTag,
+//   CompletionEvent) carries a householdId, and every service function takes
+//   the caller's householdId explicitly -- see docs/multi-household.md.
+// - User (a login) is deliberately separate from Member (a person chores are
+//   credited to, who may never log in -- e.g. a child). HouseholdMembership
+//   joins Users to Households.
 // - Tasks are never hard-deleted by the UI; they are archived. CompletionEvent
 //   rows are the permanent, append-mostly history the app is built around.
 // - recurrenceConfig / reminderConfig are validated by Zod at the application
@@ -34,21 +38,22 @@ enum Theme {
   DARK
 }
 
-/// Singleton row (id always 1) holding household identity + app settings.
+enum MembershipRole {
+  OWNER
+  MEMBER
+}
+
+/// A tenant: one household's identity + settings. All chore data hangs off it.
 model Household {
   id       Int    @id @default(autoincrement())
   name     String
   timezone String @default("Europe/London")
 
-  theme              Theme   @default(SYSTEM)
-  dateFormat         String  @default("DD/MM/YYYY")
-  timeFormat         String  @default("24h")
-  upcomingWindowDays Int     @default(3)
-  reminderDefaults   String  @default("{\"onDue\":true,\"onOverdue\":true,\"daysBefore\":[],\"hoursBefore\":[]}")
-
-  backupDir           String?
-  backupRetention     Int     @default(14)
-  backupIntervalHours Int     @default(24)
+  theme              Theme  @default(SYSTEM)
+  dateFormat         String @default("DD/MM/YYYY")
+  timeFormat         String @default("24h")
+  upcomingWindowDays Int    @default(3)
+  reminderDefaults   String @default("{\"onDue\":true,\"onOverdue\":true,\"daysBefore\":[],\"hoursBefore\":[]}")
 
   displayConfig String @default("{\"idleTimeoutSeconds\":90,\"sharedMode\":true,\"screensaverBrightness\":0.4}")
 
@@ -63,18 +68,116 @@ model Household {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  memberships      HouseholdMembership[]
+  invites          Invite[]
+  sessions         Session[]
+  members          Member[]
+  areas            Area[]
+  tasks            Task[]
+  nfcTags          NfcTag[]
+  completionEvents CompletionEvent[]
+}
+
+/// A login. Never credited with chores directly -- that's Member's job.
+model User {
+  id           String @id @default(cuid())
+  /// Stored lower-cased; uniqueness is case-insensitive in practice.
+  email        String @unique
+  name         String
+  /// scrypt hash, see src/lib/auth/password.ts.
+  passwordHash String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships    HouseholdMembership[]
+  sessions       Session[]
+  passwordResets PasswordResetToken[]
+  invitesCreated Invite[]              @relation("InviteCreatedBy")
+}
+
+model HouseholdMembership {
+  id          String         @id @default(cuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  householdId Int
+  household   Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  role        MembershipRole @default(MEMBER)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, householdId])
+  @@index([householdId])
+}
+
+/// A signed-in browser. The cookie holds a random token; only its SHA-256
+/// hash is stored, so a leaked database can't be replayed as sessions.
+model Session {
+  id          String     @id @default(cuid())
+  tokenHash   String     @unique
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The household this browser is currently looking at (null until the user
+  /// has created or joined one).
+  householdId Int?
+  household   Household? @relation(fields: [householdId], references: [id], onDelete: SetNull)
+
+  /// Sliding expiry: pushed forward on use, so an always-on wall display
+  /// never gets logged out, but an abandoned session dies.
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// A shareable "join our household" link. Single-use, time-limited.
+model Invite {
+  id          String         @id @default(cuid())
+  tokenHash   String         @unique
+  householdId Int
+  household   Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  role        MembershipRole @default(MEMBER)
+  createdById String
+  createdBy   User           @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([householdId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Member {
-  id     String  @id @default(cuid())
-  name   String
-  icon   String  @default("🙂")
-  color  String? // optional hex accent, e.g. "#4F8EF7"
-  active Boolean @default(true)
-  order  Int     @default(0)
+  id          String    @id @default(cuid())
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name        String
+  icon        String    @default("🙂")
+  color       String? // optional hex accent, e.g. "#4F8EF7"
+  active      Boolean   @default(true)
+  order       Int       @default(0)
   /// The single system-managed "Joint effort" member, used when a task is done together.
   /// Hidden from member lists/pickers; stats credit a joint completion to every real member.
-  isJoint Boolean @default(false)
+  isJoint     Boolean   @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -82,26 +185,30 @@ model Member {
   defaultAssigneeFor Task[]            @relation("TaskDefaultAssignee")
   completionEvents   CompletionEvent[]
 
-  @@index([active, order])
+  @@index([householdId, active, order])
 }
 
 model Area {
-  id       String  @id @default(cuid())
-  name     String
-  icon     String  @default("🏠")
-  order    Int     @default(0)
-  archived Boolean @default(false)
+  id          String    @id @default(cuid())
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name        String
+  icon        String    @default("🏠")
+  order       Int       @default(0)
+  archived    Boolean   @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   tasks Task[]
 
-  @@index([archived, order])
+  @@index([householdId, archived, order])
 }
 
 model Task {
-  id          String  @id @default(cuid())
+  id          String    @id @default(cuid())
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   name        String
   description String?
 
@@ -138,7 +245,7 @@ model Task {
   nfcTags          NfcTag[]
 
   @@index([areaId])
-  @@index([active, dueDate])
+  @@index([householdId, active, dueDate])
 }
 
 /// A physical NFC sticker (or its QR-code equivalent), identified by a
@@ -146,8 +253,12 @@ model Task {
 /// *current* assignment and can be repointed to a different task at any
 /// time without touching the physical tag — the token itself never changes.
 model NfcTag {
-  id    String @id @default(cuid())
-  token String @unique
+  id          String    @id @default(cuid())
+  /// Globally unique (it's baked into a URL), but a tap only completes the
+  /// task for a signed-in user of the tag's own household.
+  token       String    @unique
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
   /// Friendly name/location, e.g. "Washing machine cupboard".
   label String @default("")
@@ -162,15 +273,18 @@ model NfcTag {
   updatedAt DateTime @updatedAt
 
   @@index([taskId])
+  @@index([householdId])
 }
 
 /// Immutable-by-default log of task completions. The app's history and
 /// statistics are derived entirely from these rows. Corrections are made via
 /// explicit edit/delete actions in the UI, not by mutating other tables.
 model CompletionEvent {
-  id     String @id @default(cuid())
-  taskId String
-  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  householdId Int
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  taskId      String
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   memberId String
   member   Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
@@ -186,5 +300,5 @@ model CompletionEvent {
 
   @@index([taskId, completedAt])
   @@index([memberId, completedAt])
-  @@index([completedAt])
+  @@index([householdId, completedAt])
 }

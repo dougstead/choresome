@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { HttpError } from "@/lib/auth/errors";
 
 export function jsonError(status: number, message: string, details?: unknown, code?: string) {
   return NextResponse.json({ error: message, ...(code ? { code } : {}), ...(details ? { details } : {}) }, { status });
@@ -7,8 +8,12 @@ export function jsonError(status: number, message: string, details?: unknown, co
 
 /** Converts a caught error from a route handler into an appropriate JSON response. */
 export function handleApiError(error: unknown): NextResponse {
+  if (error instanceof HttpError) {
+    return jsonError(error.status, error.message, undefined, error.code);
+  }
   if (error instanceof ZodError) {
-    return jsonError(400, "Invalid request", error.flatten());
+    const first = error.issues[0]?.message;
+    return jsonError(400, first ? `Invalid request: ${first}` : "Invalid request", error.flatten());
   }
   if (error instanceof SyntaxError) {
     return jsonError(400, "Malformed JSON body");

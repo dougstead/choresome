@@ -2,10 +2,12 @@ import { prisma } from "@/lib/db";
 import { generateShortToken } from "@/lib/short-token";
 import { recordCompletion, NFC_DEDUPE_WINDOW_MS } from "./completion-service";
 import type { CreateNfcTagInput, UpdateNfcTagInput } from "@/lib/validation/nfc-tag";
+import { assertTaskInHousehold } from "./tenant";
+import { notFound } from "@/lib/auth/errors";
 
 const TAG_INCLUDE = { task: { include: { area: true } } } as const;
 
-async function generateUniqueToken(): Promise<string> {
+export async function generateUniqueToken(): Promise<string> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const candidate = generateShortToken();
     const existing = await prisma.nfcTag.findUnique({ where: { token: candidate } });
@@ -14,19 +16,23 @@ async function generateUniqueToken(): Promise<string> {
   throw new Error("Could not generate a unique NFC tag token");
 }
 
-export async function listNfcTags() {
-  return prisma.nfcTag.findMany({ include: TAG_INCLUDE, orderBy: { createdAt: "asc" } });
+export async function listNfcTags(householdId: number) {
+  return prisma.nfcTag.findMany({ where: { householdId }, include: TAG_INCLUDE, orderBy: { createdAt: "asc" } });
 }
 
-export async function createNfcTag(input: CreateNfcTagInput) {
+export async function createNfcTag(householdId: number, input: CreateNfcTagInput) {
+  if (input.taskId) await assertTaskInHousehold(householdId, input.taskId);
   const token = await generateUniqueToken();
   return prisma.nfcTag.create({
-    data: { token, label: input.label ?? "", taskId: input.taskId ?? null },
+    data: { householdId, token, label: input.label ?? "", taskId: input.taskId ?? null },
     include: TAG_INCLUDE,
   });
 }
 
-export async function updateNfcTag(id: string, input: UpdateNfcTagInput) {
+export async function updateNfcTag(householdId: number, id: string, input: UpdateNfcTagInput) {
+  const existing = await prisma.nfcTag.findFirst({ where: { id, householdId }, select: { id: true } });
+  if (!existing) throw notFound("Tag not found");
+  if (input.taskId) await assertTaskInHousehold(householdId, input.taskId);
   return prisma.nfcTag.update({
     where: { id },
     data: {
@@ -38,8 +44,9 @@ export async function updateNfcTag(id: string, input: UpdateNfcTagInput) {
   });
 }
 
-export async function getNfcTagByToken(token: string) {
-  return prisma.nfcTag.findUnique({ where: { token }, include: TAG_INCLUDE });
+/** Looks a tag up within one household only -- a tag from another household is "not found", never revealed. */
+export async function getNfcTagByToken(householdId: number, token: string) {
+  return prisma.nfcTag.findFirst({ where: { token, householdId }, include: TAG_INCLUDE });
 }
 
 export type NfcCompletionResult =
@@ -55,8 +62,8 @@ export type NfcCompletionResult =
  * same recurrence engine) manual completion uses — just with a longer
  * duplicate-tap window suited to how NFC scans actually behave.
  */
-export async function completeViaNfcTag(token: string, memberId: string): Promise<NfcCompletionResult> {
-  const tag = await getNfcTagByToken(token);
+export async function completeViaNfcTag(householdId: number, token: string, memberId: string): Promise<NfcCompletionResult> {
+  const tag = await getNfcTagByToken(householdId, token);
   if (!tag) return { status: "not_found" };
   if (!tag.active) return { status: "disabled" };
   if (!tag.taskId) return { status: "unassigned" };
@@ -65,11 +72,11 @@ export async function completeViaNfcTag(token: string, memberId: string): Promis
   // trip to the server, so it can go stale (household reset, JSON restore,
   // member removed) — check explicitly rather than letting a foreign-key
   // error surface as a raw 500, so the client can fall back to asking.
-  const member = await prisma.member.findUnique({ where: { id: memberId } });
+  const member = await prisma.member.findFirst({ where: { id: memberId, householdId } });
   if (!member) return { status: "invalid_member" };
 
   await prisma.nfcTag.update({ where: { id: tag.id }, data: { lastUsedAt: new Date() } });
 
-  const result = await recordCompletion({ taskId: tag.taskId, memberId }, { dedupeWindowMs: NFC_DEDUPE_WINDOW_MS });
+  const result = await recordCompletion(householdId, { taskId: tag.taskId, memberId }, { dedupeWindowMs: NFC_DEDUPE_WINDOW_MS });
   return { status: "ok", event: result.event, task: result.task, duplicate: result.duplicate };
 }

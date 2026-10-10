@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireHousehold } from "@/lib/auth/context";
 import { handleApiError } from "@/lib/api/respond";
 import { updateMember } from "@/lib/services/member-service";
 import { updateMemberSchema } from "@/lib/validation/member";
@@ -9,9 +10,10 @@ interface RouteParams {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    const { householdId } = await requireHousehold();
     const { id } = await params;
     const body = updateMemberSchema.parse(await request.json());
-    const member = await updateMember(id, body);
+    const member = await updateMember(householdId, id, body);
     return NextResponse.json({ member });
   } catch (error) {
     return handleApiError(error);

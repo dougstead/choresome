@@ -1,36 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleApiError, jsonError } from "@/lib/api/respond";
-import { createArea } from "@/lib/services/area-service";
-import { createMember } from "@/lib/services/member-service";
-import { getHouseholdSettings, updateHouseholdSettings } from "@/lib/services/settings-service";
+import { handleApiError } from "@/lib/api/respond";
+import { requireUser } from "@/lib/auth/context";
+import { createHousehold, setSessionHousehold } from "@/lib/services/household-service";
+import { getHouseholdSettings } from "@/lib/services/settings-service";
 import { setupSchema } from "@/lib/validation/settings";
 
+/** Creates a new household from the setup wizard, owned by the signed-in user, and switches this browser to it. */
 export async function POST(request: NextRequest) {
   try {
-    const existing = await getHouseholdSettings();
-    if (existing.setupCompleted) {
-      return jsonError(409, "Setup has already been completed");
-    }
-
+    const auth = await requireUser();
     const body = setupSchema.parse(await request.json());
 
-    const settings = await updateHouseholdSettings({
-      name: body.householdName,
-      timezone: body.timezone,
-      setupCompleted: true,
-    });
-
-    // Created sequentially, not via Promise.all: createMember/createArea derive
-    // `order` from a count() read before the row is inserted, so concurrent
-    // calls would race and hand out duplicate order values.
-    const members = [];
-    for (const member of body.members) {
-      members.push(await createMember(member));
-    }
-    const areas = [];
-    for (const area of body.areas) {
-      areas.push(await createArea(area));
-    }
+    const { household, members, areas } = await createHousehold(auth.user.id, body);
+    await setSessionHousehold(auth.sessionId, household.id);
+    const settings = await getHouseholdSettings(household.id);
 
     return NextResponse.json({ settings, members, areas }, { status: 201 });
   } catch (error) {

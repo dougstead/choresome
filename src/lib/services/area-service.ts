@@ -1,21 +1,23 @@
 import { prisma } from "@/lib/db";
 import type { CreateAreaInput, UpdateAreaInput } from "@/lib/validation/area";
+import { findAreaOrThrow } from "./tenant";
 
-export async function listAreas(options: { includeArchived?: boolean } = {}) {
+export async function listAreas(householdId: number, options: { includeArchived?: boolean } = {}) {
   return prisma.area.findMany({
-    where: options.includeArchived ? {} : { archived: false },
+    where: { householdId, ...(options.includeArchived ? {} : { archived: false }) },
     orderBy: { order: "asc" },
   });
 }
 
-export async function createArea(input: CreateAreaInput) {
-  const count = await prisma.area.count();
+export async function createArea(householdId: number, input: CreateAreaInput) {
+  const count = await prisma.area.count({ where: { householdId } });
   return prisma.area.create({
-    data: { name: input.name, icon: input.icon ?? "🏠", order: count },
+    data: { householdId, name: input.name, icon: input.icon ?? "🏠", order: count },
   });
 }
 
-export async function updateArea(id: string, input: UpdateAreaInput) {
+export async function updateArea(householdId: number, id: string, input: UpdateAreaInput) {
+  await findAreaOrThrow(householdId, id);
   return prisma.area.update({
     where: { id },
     data: {

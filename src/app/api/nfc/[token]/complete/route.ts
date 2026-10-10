@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireHousehold } from "@/lib/auth/context";
 import { z } from "zod";
 import { handleApiError, jsonError } from "@/lib/api/respond";
 import { completeViaNfcTag } from "@/lib/services/nfc-tag-service";
@@ -15,12 +16,13 @@ const bodySchema = z.object({ memberId: z.string().min(1) });
 // page does a GET (to render), then this route does the POST.
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
+    const { householdId } = await requireHousehold();
     const { token } = await params;
     const { memberId } = bodySchema.parse(await request.json());
 
-    const result = await completeViaNfcTag(token, memberId);
+    const result = await completeViaNfcTag(householdId, token, memberId);
 
-    if (result.status === "not_found") return jsonError(404, "This tag isn't registered.");
+    if (result.status === "not_found") return jsonError(404, "This tag isn't registered to your household.");
     if (result.status === "disabled") return jsonError(409, "This tag has been disabled.");
     if (result.status === "unassigned") return jsonError(409, "This tag isn't linked to a task yet.");
     if (result.status === "invalid_member")

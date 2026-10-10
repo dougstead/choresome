@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireHousehold } from "@/lib/auth/context";
 import { handleApiError } from "@/lib/api/respond";
 import { updateNfcTag } from "@/lib/services/nfc-tag-service";
 import { updateNfcTagSchema } from "@/lib/validation/nfc-tag";
@@ -9,9 +10,10 @@ interface RouteParams {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    const { householdId } = await requireHousehold();
     const { id } = await params;
     const body = updateNfcTagSchema.parse(await request.json());
-    const tag = await updateNfcTag(id, body);
+    const tag = await updateNfcTag(householdId, id, body);
     return NextResponse.json({ tag });
   } catch (error) {
     return handleApiError(error);

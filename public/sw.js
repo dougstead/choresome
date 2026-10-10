@@ -5,7 +5,9 @@
 // installable and to keep the app shell available during brief network
 // blips, e.g. the mini PC restarting or Wi-Fi hiccuping.
 
-const CACHE_NAME = "choresome-shell-v1";
+// v2: multi-household. Bumping the name drops every page cached by the
+// single-household version, which would otherwise be served offline.
+const CACHE_NAME = "choresome-shell-v2";
 const PRECACHE_URLS = ["/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/offline.html"];
 
 self.addEventListener("install", (event) => {

@@ -1,9 +1,11 @@
 import { DisplayApp } from "@/components/display/display-app";
 import { householdTodayIso } from "@/lib/household-clock";
 import { getHouseholdSettings } from "@/lib/services/settings-service";
+import { requirePageHousehold } from "@/lib/auth/context";
 
 export default async function DisplayPage() {
-  const settings = await getHouseholdSettings();
+  const { householdId } = await requirePageHousehold("/display");
+  const settings = await getHouseholdSettings(householdId);
   const todayIso = householdTodayIso(settings);
 
   return (

@@ -1,9 +1,11 @@
 import { Dashboard } from "@/components/dashboard";
 import { householdTodayIso } from "@/lib/household-clock";
 import { getHouseholdSettings } from "@/lib/services/settings-service";
+import { requirePageHousehold } from "@/lib/auth/context";
 
 export default async function DashboardPage() {
-  const settings = await getHouseholdSettings();
+  const { householdId } = await requirePageHousehold();
+  const settings = await getHouseholdSettings(householdId);
   const todayIso = householdTodayIso(settings);
 
   return (

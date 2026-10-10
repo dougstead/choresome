@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { calendarDateToUtcDate, instantToCalendarDate, startOfMonth, startOfWeek } from "@/lib/dates";
 import { getHouseholdSettings } from "./settings-service";
 import { listMembers } from "./member-service";
+import { findTaskOrThrow } from "./tenant";
 
 const DAY_MS = 86_400_000;
 
@@ -25,9 +26,10 @@ export interface TaskStats {
   lastCompletedByMemberName: string | null;
 }
 
-export async function getTaskStats(taskId: string): Promise<TaskStats> {
+export async function getTaskStats(householdId: number, taskId: string): Promise<TaskStats> {
+  await findTaskOrThrow(householdId, taskId);
   const events = await prisma.completionEvent.findMany({
-    where: { taskId },
+    where: { taskId, householdId },
     include: { member: true },
     orderBy: { completedAt: "asc" },
   });
@@ -60,7 +62,7 @@ export async function getTaskStats(taskId: string): Promise<TaskStats> {
   const averageIntervalDays = gaps.length > 0 ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
   const longestIntervalDays = gaps.length > 0 ? Math.max(...gaps) : null;
 
-  const activeMembers = await listMembers();
+  const activeMembers = await listMembers(householdId);
   const byMember = new Map<string, { memberName: string; count: number }>();
   for (const event of events) {
     for (const person of creditedTo(event, activeMembers)) {
@@ -94,27 +96,31 @@ export interface HouseholdStats {
   recentActivity: Awaited<ReturnType<typeof recentActivityQuery>>;
 }
 
-function recentActivityQuery(limit: number) {
+function recentActivityQuery(householdId: number, limit: number) {
   return prisma.completionEvent.findMany({
+    where: { householdId },
     include: { member: true, task: { include: { area: true } } },
     orderBy: { completedAt: "desc" },
     take: limit,
   });
 }
 
-export async function getHouseholdStats(options: { recentActivityLimit?: number } = {}): Promise<HouseholdStats> {
-  const settings = await getHouseholdSettings();
+export async function getHouseholdStats(
+  householdId: number,
+  options: { recentActivityLimit?: number } = {}
+): Promise<HouseholdStats> {
+  const settings = await getHouseholdSettings(householdId);
   const today = instantToCalendarDate(new Date(), settings.timezone);
   const weekStart = calendarDateToUtcDate(startOfWeek(today));
   const monthStart = calendarDateToUtcDate(startOfMonth(today));
 
   const [thisWeekEvents, thisMonthEvents, recentActivity] = await Promise.all([
-    prisma.completionEvent.findMany({ where: { completedAt: { gte: weekStart } }, include: { member: true, task: { include: { area: true } } } }),
-    prisma.completionEvent.findMany({ where: { completedAt: { gte: monthStart } }, include: { member: true, task: { include: { area: true } } } }),
-    recentActivityQuery(options.recentActivityLimit ?? 20),
+    prisma.completionEvent.findMany({ where: { householdId, completedAt: { gte: weekStart } }, include: { member: true, task: { include: { area: true } } } }),
+    prisma.completionEvent.findMany({ where: { householdId, completedAt: { gte: monthStart } }, include: { member: true, task: { include: { area: true } } } }),
+    recentActivityQuery(householdId, options.recentActivityLimit ?? 20),
   ]);
 
-  const activeMembers = await listMembers();
+  const activeMembers = await listMembers(householdId);
   const byPerson = new Map<string, { memberName: string; count: number }>();
   const byArea = new Map<string, { areaName: string; count: number }>();
   for (const event of thisMonthEvents) {

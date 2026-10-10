@@ -25,11 +25,7 @@ export const updateSettingsSchema = z.object({
   timeFormat: z.enum(["12h", "24h"]).optional(),
   upcomingWindowDays: z.number().int().min(1).max(30).optional(),
   reminderDefaults: reminderConfigSchema.optional(),
-  backupDir: z.string().trim().max(500).nullable().optional(),
-  backupRetention: z.number().int().min(1).max(365).optional(),
-  backupIntervalHours: z.number().int().min(1).max(168).optional(),
   displayConfig: displayConfigSchema.optional(),
-  setupCompleted: z.boolean().optional(),
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

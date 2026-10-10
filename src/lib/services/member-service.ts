@@ -1,32 +1,34 @@
 import { prisma } from "@/lib/db";
 import type { CreateMemberInput, UpdateMemberInput } from "@/lib/validation/member";
+import { findMemberOrThrow } from "./tenant";
 
 /** Real household members. The system "Joint effort" member is never included. */
-export async function listMembers(options: { includeInactive?: boolean } = {}) {
+export async function listMembers(householdId: number, options: { includeInactive?: boolean } = {}) {
   return prisma.member.findMany({
-    where: { isJoint: false, ...(options.includeInactive ? {} : { active: true }) },
+    where: { householdId, isJoint: false, ...(options.includeInactive ? {} : { active: true }) },
     orderBy: { order: "asc" },
   });
 }
 
 /**
- * The single system member that "Joint effort" completions are recorded
- * against, created on first use. Keeping it a real Member row means history,
- * undo, dedupe, backups and NFC all work unchanged; stats expand it back out
- * to credit every real member.
+ * The household's single system member that "Joint effort" completions are
+ * recorded against, created on first use. Keeping it a real Member row means
+ * history, undo, dedupe, backups and NFC all work unchanged; stats expand it
+ * back out to credit every real member.
  */
-export async function getJointMember() {
-  const existing = await prisma.member.findFirst({ where: { isJoint: true } });
+export async function getJointMember(householdId: number) {
+  const existing = await prisma.member.findFirst({ where: { householdId, isJoint: true } });
   if (existing) return existing;
   return prisma.member.create({
-    data: { name: "Joint effort", icon: "🤝", isJoint: true, order: 9999 },
+    data: { householdId, name: "Joint effort", icon: "🤝", isJoint: true, order: 9999 },
   });
 }
 
-export async function createMember(input: CreateMemberInput) {
-  const count = await prisma.member.count({ where: { isJoint: false } });
+export async function createMember(householdId: number, input: CreateMemberInput) {
+  const count = await prisma.member.count({ where: { householdId, isJoint: false } });
   return prisma.member.create({
     data: {
+      householdId,
       name: input.name,
       icon: input.icon ?? "🙂",
       color: input.color,
@@ -35,7 +37,8 @@ export async function createMember(input: CreateMemberInput) {
   });
 }
 
-export async function updateMember(id: string, input: UpdateMemberInput) {
+export async function updateMember(householdId: number, id: string, input: UpdateMemberInput) {
+  await findMemberOrThrow(householdId, id);
   return prisma.member.update({
     where: { id },
     data: {

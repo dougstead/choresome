@@ -78,6 +78,11 @@ $AppPassword = Read-EnvValue $SecretsFile "PG_APP_PASSWORD"
 
 if (-not (Test-Path (Join-Path $PgBin "postgres.exe"))) {
     Write-Host "Installing PostgreSQL 17 (this takes a few minutes)..."
+    # Over SSH, Windows reports USERDOMAIN as WORKGROUP; the EDB installer then
+    # fails to resolve the account ("Invalid account WORKGROUP\user") and dies
+    # writing its temp files. The machine name is the right domain for a
+    # local account.
+    if ($env:USERDOMAIN -eq "WORKGROUP") { $env:USERDOMAIN = $env:COMPUTERNAME }
     $override = "--mode unattended --unattendedmodeui none --superpassword $SuperPassword --serverport 5432 " +
         "--enable-components server,commandlinetools --disable-components pgAdmin,stackbuilder"
     winget install -e --id PostgreSQL.PostgreSQL.17 --accept-source-agreements --accept-package-agreements --silent --override $override

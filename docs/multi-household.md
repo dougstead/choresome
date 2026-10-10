@@ -80,34 +80,41 @@ is in it, the household is deleted.
 |---|---|---|
 | Tenancy | Shared schema with a `householdId` column | A SQLite file per household: strong isolation, but painful migrations and backups at scale |
 | Enforcement | Explicit `householdId` parameter plus ownership checks, tested | A Prisma extension that injects the filter automatically: invisible and easy to bypass by accident |
-| Database | **SQLite (WAL mode)** | Postgres: the right choice past one server, but it isn't installed on the dev machine; Prisma makes switching mostly a provider change |
+| Database | **PostgreSQL** (moved from SQLite) | SQLite: simpler, but one file on one box; Postgres gives real concurrent writes, managed hosting options, and room to run several app instances |
 | Passwords | Node's built-in `scrypt` | bcrypt/argon2: need native addons, which are fragile on Windows hosts |
 | Sessions | Database sessions, hashed tokens | JWTs: can't be revoked, and "remove from household" and "sign out everywhere" must take effect instantly |
 | Inviting | Copy-a-link invites | Emailed invites: need SMTP before the first household can even add a partner |
 | Email | SMTP via nodemailer if `SMTP_URL` is set, otherwise written to `data/outbox/` | Requiring a mail provider to run at all |
 | Import | New ids for every row, references rewritten | Keeping the bundle's ids, which could collide across households, or let a crafted file target another household's rows |
-| Backups | Server-wide, configured by env vars | Per-household `backupDir`: a household must never choose a path on the server, so that setting was removed |
-| Household id | Kept as an autoincrement `Int` | A cuid: unnecessary, since ids are never trusted without a membership check, and keeping `Int` gives a clean upgrade path for the existing install |
+| Backups | Server-wide `pg_dump` snapshots, configured by env vars (or off, when the database host backs up) | Per-household `backupDir`: a household must never choose a path on the server, so that setting was removed |
+| Household id | Kept as an autoincrement `Int` | A cuid: unnecessary, since ids are never trusted without a membership check |
+| JSON settings columns | Kept as `TEXT`, validated by Zod | Postgres `jsonb`: nicer to query, but every reader would change for no current benefit |
+| Local Postgres | `npm run db:local`, the real server binaries from the `embedded-postgres` dev dependency, data in `data/pg` | A Windows service install: needs admin rights; fine for a server, unnecessary for development |
+| Test database | Tests apply the real migrations (`migrate deploy`) to `choresome_test` and clear rows between tests | `db push --force-reset`: drops the database, and Prisma refuses to let an AI agent run it unattended |
 
-## Upgrading the existing single-household install
+## Moving the existing single-household install across
 
-The `multi_household` migration attaches every existing row to household 1.
-The household then has no logins, so claim it:
+The LAN build (on `main`) uses SQLite; this one uses Postgres with a fresh
+migration history, so data moves as a file rather than in place:
 
-```bash
-npm run admin -- claim-household --household 1 --email you@example.com
-```
+1. On the LAN install, open Settings → Backup & restore → **Export JSON**.
+2. On the hosted service, sign up, create a household, then use **Import JSON**
+   (owners only). Every row gets a new id; history, tags and settings come
+   across intact. (Tested with 15 tasks and 151 completions.)
 
-That prints a one-hour link to set the account's password. Alternatively, use
-**Export JSON** on the old install and **Import JSON** into a new household on
-the hosted one.
+`npm run admin -- claim-household` still makes any account an owner of an
+existing household, for support cases.
 
 ## Running it
 
 ```bash
+npm run db:local        # local Postgres on :5433 (leave running), or use your own
 npm run build
 node --env-file=.env.hosted.local scripts/start-hosted.mjs
 ```
+
+Tests need the same local Postgres (`TEST_DATABASE_URL` in `.env.test.local`,
+pointing at a database whose name contains "test").
 
 `start-hosted.mjs` applies pending migrations, then runs `next start`.
 Configuration is documented in `.env.example`: APP_URL, SIGNUPS_ENABLED,
@@ -131,8 +138,7 @@ For a public deployment, put it behind a TLS-terminating reverse proxy, set
   than a technical one.
 - **Email verification** on sign-up. Password reset already proves control of
   the email address when it matters.
-- **Multiple app instances.** Rate limiting is in-memory and SQLite is a
-  single file. Scaling past one server means Postgres plus a shared
-  rate-limit store such as Redis.
+- **Multiple app instances.** The database is ready for it, but rate
+  limiting is in-memory; several instances need a shared store such as Redis.
 - **Web Push** reminders. These are still foreground-only, as before.
 - **An admin dashboard.** Operators use the CLI above.

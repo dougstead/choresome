@@ -1,20 +1,38 @@
-# Docker is a development/testing convenience only — see README. Production
-# deployment on the mini PC runs natively on Windows (Node.js + a native
-# Caddy binary via Task Scheduler) to avoid Docker Desktop/WSL2's memory
-# overhead; see scripts/server/ and the "Windows mini-PC deployment" section
-# of the README for that path.
+# Docker is a development/testing convenience only — see README and
+# docs/multi-household.md. Not verified on the machine this branch was built
+# on (no Docker there); the native path is scripts/start-hosted.mjs.
 services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: choresome
+      POSTGRES_PASSWORD: choresome-dev-only
+      POSTGRES_DB: choresome
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U choresome"]
+      interval: 5s
+      retries: 10
+
   choresome:
     build: .
     image: choresome:latest
     container_name: choresome
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "3010:3000"
     environment:
-      DATABASE_URL: "file:/app/data/choresome.db"
+      DATABASE_URL: "postgresql://choresome:choresome-dev-only@db:5432/choresome?schema=public"
+      APP_URL: "http://localhost:3010"
+      # The app image has no pg_dump matching Postgres 17; back up with
+      # `docker compose exec db pg_dump -U choresome -Fc choresome > backup.dump`.
+      BACKUP_INTERVAL_HOURS: "0"
       SEED_DEMO_DATA: "false"
-    volumes:
-      # Persistent data lives on the host, outside the disposable container.
-      - ./data:/app/data
-      - ./backups:/app/backups
+
+volumes:
+  pgdata:

@@ -1,6 +1,6 @@
 /**
  * Runs once when the Next.js server process starts. Used here to keep an
- * automatic, timestamped server-wide SQLite backup running without needing
+ * automatic, timestamped server-wide database backup (pg_dump) running without needing
  * any OS-level scheduler — see scripts/run-backup.ts for an alternative if
  * you'd rather drive backups from an external scheduler instead.
  *

@@ -232,7 +232,7 @@ data/                    SQLite database lives here (gitignored, created at runt
 backups/                 Automatic timestamped backups land here (gitignored)
 Caddyfile                Native production reverse proxy config (see Windows mini-PC deployment)
 Dockerfile, docker-compose.yml
-                         Dev/testing convenience only — not used in production (see below)
+                         Dev/testing convenience only (see below)
 ```
 
 ## Local development

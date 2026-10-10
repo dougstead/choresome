@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdir, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { config } from "@/lib/config";
@@ -97,69 +98,114 @@ export async function importHouseholdData(householdId: number, rawInput: unknown
         },
       });
     }
-    for (const member of data.members) {
-      await tx.member.create({ data: { ...member, id: remap(memberIds, member.id, "member"), householdId } });
-    }
-    for (const area of data.areas) {
-      await tx.area.create({ data: { ...area, id: remap(areaIds, area.id, "area"), householdId } });
-    }
-    for (const task of data.tasks) {
-      await tx.task.create({
-        data: {
-          ...task,
-          id: remap(taskIds, task.id, "task"),
-          householdId,
-          areaId: remap(areaIds, task.areaId, "area"),
-          defaultAssigneeId: task.defaultAssigneeId ? remap(memberIds, task.defaultAssigneeId, "member") : null,
-        },
-      });
-    }
-    for (const tag of data.nfcTags) {
-      await tx.nfcTag.create({
-        data: {
-          ...tag,
-          id: createId(),
-          householdId,
-          token: tokens.get(tag.id) ?? tag.token,
-          taskId: tag.taskId ? remap(taskIds, tag.taskId, "task") : null,
-        },
-      });
-    }
-    for (const event of data.completionEvents) {
-      await tx.completionEvent.create({
-        data: {
-          ...event,
-          id: createId(),
-          householdId,
-          taskId: remap(taskIds, event.taskId, "task"),
-          memberId: remap(memberIds, event.memberId, "member"),
-        },
-      });
-    }
-  });
+    // Bulk inserts (one statement per table) keep a years-long history well
+    // inside the transaction timeout.
+    await tx.member.createMany({
+      data: data.members.map((member) => ({ ...member, id: remap(memberIds, member.id, "member"), householdId })),
+    });
+    await tx.area.createMany({
+      data: data.areas.map((area) => ({ ...area, id: remap(areaIds, area.id, "area"), householdId })),
+    });
+    await tx.task.createMany({
+      data: data.tasks.map((task) => ({
+        ...task,
+        id: remap(taskIds, task.id, "task"),
+        householdId,
+        areaId: remap(areaIds, task.areaId, "area"),
+        defaultAssigneeId: task.defaultAssigneeId ? remap(memberIds, task.defaultAssigneeId, "member") : null,
+      })),
+    });
+    await tx.nfcTag.createMany({
+      data: data.nfcTags.map((tag) => ({
+        ...tag,
+        id: createId(),
+        householdId,
+        token: tokens.get(tag.id) ?? tag.token,
+        taskId: tag.taskId ? remap(taskIds, tag.taskId, "task") : null,
+      })),
+    });
+    await tx.completionEvent.createMany({
+      data: data.completionEvents.map((event) => ({
+        ...event,
+        id: createId(),
+        householdId,
+        taskId: remap(taskIds, event.taskId, "task"),
+        memberId: remap(memberIds, event.memberId, "member"),
+      })),
+    });
+  }, { timeout: 60_000 });
 }
 
 const BACKUP_FILE_PREFIX = "choresome-";
-const BACKUP_FILE_SUFFIX = ".db";
+const BACKUP_FILE_SUFFIX = ".dump";
 const randomSuffix = customAlphabet("23456789abcdefghjkmnpqrstuvwxyz", 4);
 
-/** Server-wide backup directory: BACKUP_DIR if set, else backups/ beside data/ at the project root. */
+export function isBackupFile(name: string): boolean {
+  return name.startsWith(BACKUP_FILE_PREFIX) && name.endsWith(BACKUP_FILE_SUFFIX);
+}
+
+/** Server-wide backup directory: BACKUP_DIR if set, else backups/ at the project root. */
 export function defaultBackupDir(): string {
   return config.backupDir ? path.resolve(config.backupDir) : path.resolve(process.cwd(), "backups");
 }
 
+/** Thrown when pg_dump isn't installed, so the scheduler can say so once instead of failing every hour. */
+export class PgDumpMissingError extends Error {}
+
+/** Libpq understands these URL parameters; Prisma's own (schema, connection_limit, ...) would make pg_dump reject the URL. */
+const LIBPQ_PARAMS = new Set(["sslmode", "sslrootcert", "sslcert", "sslkey", "connect_timeout", "application_name", "options"]);
+
 /**
- * Creates a consistent point-in-time copy of the live SQLite database using
- * `VACUUM INTO`, which SQLite guarantees is transactionally safe even while
- * other connections are reading or writing — unlike a plain file copy, which
- * can capture a half-written page.
+ * Turns DATABASE_URL into pg_dump arguments + environment: Prisma-only query
+ * parameters are dropped (a `schema` becomes `--schema`), and the password
+ * moves into PGPASSWORD so it never appears in the process list.
  */
-export async function createSqliteBackup(backupDir: string): Promise<string> {
+export function pgDumpConnection(databaseUrl: string): { args: string[]; env: Record<string, string> } {
+  const url = new URL(databaseUrl);
+  const env: Record<string, string> = {};
+  if (url.password) {
+    env.PGPASSWORD = decodeURIComponent(url.password);
+    url.password = "";
+  }
+  const args: string[] = [];
+  for (const key of [...url.searchParams.keys()]) {
+    if (key === "schema") args.push(`--schema=${url.searchParams.get(key)}`);
+    if (!LIBPQ_PARAMS.has(key)) url.searchParams.delete(key);
+  }
+  return { args: [...args, `--dbname=${url.toString()}`], env };
+}
+
+/**
+ * Writes a consistent point-in-time snapshot of the whole database (every
+ * household) with `pg_dump --format=custom` -- restorable with
+ * `pg_restore --clean --dbname=...`. pg_dump takes a transaction snapshot,
+ * so it's safe while the app keeps reading and writing.
+ */
+export async function createDatabaseBackup(backupDir: string): Promise<string> {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error("DATABASE_URL is not set");
+
   await mkdir(backupDir, { recursive: true });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filePath = path.join(backupDir, `${BACKUP_FILE_PREFIX}${timestamp}-${randomSuffix()}${BACKUP_FILE_SUFFIX}`);
-  const escapedPath = filePath.replace(/'/g, "''");
-  await prisma.$executeRawUnsafe(`VACUUM INTO '${escapedPath}'`);
+  const { args, env } = pgDumpConnection(databaseUrl);
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(config.pgDumpPath, ["--format=custom", "--no-owner", "--no-privileges", `--file=${filePath}`, ...args], {
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("error", (err: NodeJS.ErrnoException) =>
+      reject(err.code === "ENOENT" ? new PgDumpMissingError(`pg_dump not found (looked for "${config.pgDumpPath}")`) : err)
+    );
+    child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`pg_dump exited with code ${code}: ${stderr.trim()}`))));
+  }).catch(async (err) => {
+    await unlink(filePath).catch(() => undefined);
+    throw err;
+  });
+
   return filePath;
 }
 
@@ -171,7 +217,7 @@ export async function pruneOldBackups(backupDir: string, retentionCount: number)
     return [];
   }
   const backups = entries
-    .filter((name) => name.startsWith(BACKUP_FILE_PREFIX) && name.endsWith(BACKUP_FILE_SUFFIX))
+    .filter(isBackupFile)
     .sort() // ISO timestamps in the filename sort chronologically.
     .reverse();
 
@@ -183,7 +229,7 @@ export async function pruneOldBackups(backupDir: string, retentionCount: number)
 }
 
 export async function runScheduledBackup(backupDir: string, retentionCount: number): Promise<string> {
-  const filePath = await createSqliteBackup(backupDir);
+  const filePath = await createDatabaseBackup(backupDir);
   await pruneOldBackups(backupDir, retentionCount);
   return filePath;
 }

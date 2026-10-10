@@ -1,4 +1,5 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,7 +8,7 @@ import { createTestHousehold, resetDb } from "@/lib/test/reset-db";
 import { createTask } from "./task-service";
 import { recordCompletion } from "./completion-service";
 
-import { createSqliteBackup, exportHouseholdData, importHouseholdData, pruneOldBackups } from "./backup-service";
+import { createDatabaseBackup, exportHouseholdData, importHouseholdData, pgDumpConnection, pruneOldBackups } from "./backup-service";
 import { createNfcTag, listNfcTags } from "./nfc-tag-service";
 import type { CompletionRelativeRule } from "@/lib/recurrence";
 
@@ -92,7 +93,31 @@ describe("export / import round trip", () => {
   });
 });
 
-describe("SQLite backup + retention", () => {
+function pgDumpAvailable(): boolean {
+  try {
+    execFileSync(process.env.PG_DUMP_PATH || "pg_dump", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe("pg_dump connection handling", () => {
+  it("drops Prisma-only URL parameters and keeps the password out of the arguments", () => {
+    const { args, env } = pgDumpConnection(
+      "postgresql://app:s%40cret@db.example:5432/choresome?schema=tenant&connection_limit=5&sslmode=require"
+    );
+    expect(env.PGPASSWORD).toBe("s@cret");
+    expect(args).toContain("--schema=tenant");
+    const dbname = args.find((a) => a.startsWith("--dbname="))!;
+    expect(dbname).not.toContain("cret");
+    expect(dbname).not.toContain("connection_limit");
+    expect(dbname).not.toContain("schema=");
+    expect(dbname).toContain("sslmode=require");
+  });
+});
+
+describe("database backup + retention", () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -103,26 +128,20 @@ describe("SQLite backup + retention", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("creates a readable, consistent snapshot file", async () => {
+  it.skipIf(!pgDumpAvailable())("writes a non-empty pg_dump snapshot", async () => {
     await seed();
-    const filePath = await createSqliteBackup(dir);
-    const files = await readdir(dir);
-    expect(files).toContain(path.basename(filePath));
+    const filePath = await createDatabaseBackup(dir);
+    expect(await readdir(dir)).toContain(path.basename(filePath));
+    expect((await stat(filePath)).size).toBeGreaterThan(0);
   });
 
   it("prunes old backups beyond the retention count, keeping the most recent", async () => {
-    await seed();
-    for (let i = 0; i < 5; i++) {
-      await createSqliteBackup(dir);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    const before = await readdir(dir);
-    expect(before).toHaveLength(5);
+    const names = [1, 2, 3, 4, 5].map((n) => `choresome-2026-10-0${n}T00-00-00-000Z-abcd.dump`);
+    for (const name of names) await writeFile(path.join(dir, name), "x");
+    await writeFile(path.join(dir, "unrelated.txt"), "x");
 
-    await pruneOldBackups(dir, 2);
-    const after = (await readdir(dir)).sort();
-    expect(after).toHaveLength(2);
-    // The two kept should be the two lexically-last (most recent) filenames.
-    expect(after).toEqual(before.sort().slice(-2));
+    const deleted = await pruneOldBackups(dir, 2);
+    expect(deleted.sort()).toEqual(names.slice(0, 3));
+    expect((await readdir(dir)).sort()).toEqual([...names.slice(-2), "unrelated.txt"].sort());
   });
 });

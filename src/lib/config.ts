@@ -46,8 +46,13 @@ export const config = {
   get backupRetention(): number {
     return int("BACKUP_RETENTION", 14);
   },
+  /** 0 turns the in-process backup schedule off (e.g. when the database host already backs up). */
   get backupIntervalHours(): number {
     return int("BACKUP_INTERVAL_HOURS", 24);
+  },
+  /** pg_dump executable used for server-wide backups. */
+  get pgDumpPath(): string {
+    return process.env.PG_DUMP_PATH || "pg_dump";
   },
   /** e.g. smtp://user:pass@smtp.example.com:587 -- unset means emails are logged instead of sent. */
   get smtpUrl(): string | null {

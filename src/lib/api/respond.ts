@@ -21,15 +21,18 @@ export function handleApiError(error: unknown): NextResponse {
   if (isPrismaNotFoundError(error)) {
     return jsonError(404, "Not found");
   }
+  if (prismaErrorCode(error) === "P2002") {
+    // A unique constraint lost a race (e.g. two sign-ups with one email at once).
+    return jsonError(409, "That already exists.", undefined, "conflict");
+  }
   console.error(error);
   return jsonError(500, "Internal server error");
 }
 
+function prismaErrorCode(error: unknown): unknown {
+  return typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : undefined;
+}
+
 function isPrismaNotFoundError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "P2025"
-  );
+  return prismaErrorCode(error) === "P2025";
 }

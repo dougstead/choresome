@@ -18,6 +18,14 @@
         "scripts/start-hosted.mjs"
       ],
       "port": 3020
+    },
+    {
+      "name": "choresome-postgres",
+      "runtimeExecutable": "C:\\Users\\dugst\\AppData\\Roaming\\fnm\\node-versions\\v24.19.0\\installation\\node.exe",
+      "runtimeArgs": [
+        "scripts/local-postgres.mjs"
+      ],
+      "port": 5433
     }
   ]
 }
